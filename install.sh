@@ -104,6 +104,7 @@ RADIUS_CUSTOM_EXPLICIT=""
 SETTINGS_ONLY=0
 DEPS_ONLY=0
 WANT_GUI=1
+WANT_WINDOW_MENU=1
 WANT_UPDATE_CHECK=1
 UPDATE_CHECK_EXPLICIT=""
 ASSUME_YES=0
@@ -233,6 +234,8 @@ ${C_BLD}aura-glass${C_OFF} — a fluid frosted-glass desktop for GNOME 48-50
     --no-gdm-monitors keep default GDM monitor layout (default)
     --no-gui          skip the aura-glass-settings window (installed by default
                       where PyGObject and libadwaita are present)
+    --no-window-menu  skip "Blur This App" in the window right-click menu
+                      (installed by default alongside the blur itself)
     --no-update-check skip the daily check for a newer release. The check asks
                       the git remote for its tags and notifies once per release;
                       it never installs anything on its own
@@ -340,6 +343,8 @@ parse_flags() {
         --gdm-background=*) GDM_BG="${1#*=}"; WANT_GDM=1; EXPLICIT_FLAGS=1; shift ;;
         --gui)           WANT_GUI=1; EXPLICIT_FLAGS=1; shift ;;
         --no-gui)        WANT_GUI=0; EXPLICIT_FLAGS=1; shift ;;
+        --window-menu)   WANT_WINDOW_MENU=1; EXPLICIT_FLAGS=1; shift ;;
+        --no-window-menu) WANT_WINDOW_MENU=0; EXPLICIT_FLAGS=1; shift ;;
         --update-check)  WANT_UPDATE_CHECK=1; UPDATE_CHECK_EXPLICIT=1; EXPLICIT_FLAGS=1; shift ;;
         --no-update-check) WANT_UPDATE_CHECK=0; UPDATE_CHECK_EXPLICIT=1; EXPLICIT_FLAGS=1; shift ;;
         --no-icons)      WANT_ICONS=0; EXPLICIT_FLAGS=1; shift ;;

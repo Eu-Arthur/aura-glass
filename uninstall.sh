@@ -255,6 +255,7 @@ if [ "$REMOVE_EXTENSIONS" = 1 ]; then
     # Only the ones installed under $HOME are touched: a distro-packaged copy
     # in /usr/share belongs to the system, not to us.
     for u in openbar@neuromorph custom-osd@neuromorph blur-my-shell@aunetx \
+             aura-glass-blur@aura-glass.local \
              just-perfection-desktop@just-perfection gnome-ui-tune@itstime.tech \
              space-bar@luchrioh auto-accent-colour@Wartybix \
              Vitals@CoreCoding.com clipboard-indicator@tudmotu.com \

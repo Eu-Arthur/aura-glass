@@ -272,3 +272,56 @@ pkg_remove_cmd() {
         *)      return 1 ;;
     esac
 }
+
+# ensure_aur_helper — offers to bootstrap paru or yay when install_rounded_blur
+# would otherwise give up for want of one. Only those two: both take pacman's
+# own -S/-Rns syntax, which pkg_remove_cmd above already assumes, and are the
+# only helpers anything in this project builds a command line for.
+#
+#   0  the user agreed to build one — the caller re-probes `have paru/yay`
+#   1  not Arch, declined, or the build failed
+ensure_aur_helper() {
+    [ "$DISTRO_FAMILY" = arch ] || return 1
+
+    info "no AUR helper found (paru/yay) — one is how gnome-rounded-blur"
+    info "would otherwise reach you:"
+    info "  [1] paru (default)"
+    info "  [2] yay"
+    info "  [3] skip"
+    local choice=''
+    if [ -t 0 ]; then
+        printf '    Install one? [1/2/3, default 1] ' >&2
+        read -r choice || choice=''
+    fi
+
+    local helper='' repo=''
+    case "$choice" in
+        ''|1|paru) helper=paru; repo="$PARU_AUR_REPO" ;;
+        2|yay)     helper=yay;  repo="$YAY_AUR_REPO" ;;
+        *)         return 1 ;;
+    esac
+
+    # base-devel and the clone both go through the shared installs-outside-
+    # $HOME gate: agreeing to a theme installer is not agreeing to a package
+    # build, and confirm_always (unlike confirm) does not take --yes for an
+    # answer here either.
+    confirm_always "Install $helper-bin from the AUR? It needs root, and pulls base-devel." \
+        || return 1
+
+    run sudo pacman -S --needed --noconfirm base-devel \
+        || { warn "could not install base-devel — $helper build skipped"; return 1; }
+
+    local src="$SRC_CACHE/$helper-bin"
+    run rm -rf "$src"
+    run git clone --quiet --depth 1 "$repo" "$src" \
+        || { warn "could not clone $repo"; return 1; }
+
+    if [ "${DRY_RUN:-0}" = 1 ]; then
+        info "dry-run: makepkg -si --noconfirm in $src"
+        return 0
+    fi
+
+    ( cd "$src" && makepkg -si --noconfirm ) \
+        || { warn "the $helper build failed"; return 1; }
+    ok "$helper installed"
+}

@@ -189,6 +189,39 @@ install_bms() {
     ok "$BMS_UUID (built from $BMS_REF, with the popup component and the overview patch)"
 }
 
+# aura-glass-blur@aura-glass.local — "Blur This App" in the window right-click
+# menu, editing the same Blur My Shell allow/block lists apply_app_blur does.
+# First-party, so this is a straight copy from extensions/ rather than a git
+# clone — there is no upstream to pin. It ships no gsettings schema of its
+# own, so there is nothing here to compile.
+#
+# Skipped along with Blur My Shell itself: the extension already adds nothing
+# to the menu when BMS's schema is not there (see _openBmsApplicationsSettings
+# in its own source), so installing it under --no-blur would only be dead
+# weight enabled for no reason.
+install_aura_ext() {
+    local uuid="$AURA_EXT_UUID"
+
+    if [ "${WANT_WINDOW_MENU:-1}" != 1 ]; then
+        skip "$uuid not installed (--no-window-menu)"
+        return 0
+    fi
+    if [ "${WANT_BLUR:-1}" != 1 ]; then
+        skip "$uuid left out (--no-blur) — nothing for it to toggle"
+        return 0
+    fi
+
+    if [ "${DRY_RUN:-0}" = 1 ]; then
+        info "dry-run: copy extensions/$uuid to $EXT_DIR/$uuid"
+        return 0
+    fi
+
+    rm -rf "$EXT_DIR/$uuid"
+    mkdir -p "$EXT_DIR"
+    cp -a "$REPO_ROOT/extensions/$uuid" "$EXT_DIR/$uuid"
+    ok "$uuid"
+}
+
 # Open Bar is the one extension with no GNOME 50 release. Upstream's last
 # commit targets 49, so on 50 it is built from that commit plus the patch in
 # patches/. On 49 and below the published build is used unchanged.
@@ -315,6 +348,12 @@ install_rounded_blur() {
     for h in paru yay; do have "$h" && { helper="$h"; break; }; done
 
     if [ -z "$helper" ] && ! have meson; then
+        if ensure_aur_helper; then
+            for h in paru yay; do have "$h" && { helper="$h"; break; }; done
+        fi
+    fi
+
+    if [ -z "$helper" ] && ! have meson; then
         warn "neither an AUR helper (paru/yay) nor meson is installed."
         warn "Popup blur still works and its corners are still round — it just"
         warn "samples the wallpaper instead of the window behind it."
@@ -398,6 +437,7 @@ install_extensions() {
     else
         skip "$BMS_UUID left out (--no-blur)"
     fi
+    install_aura_ext
     install_openbar
     install_custom_osd
 
@@ -415,6 +455,7 @@ enable_extensions() {
     local want=("${EXT_CORE[@]}" openbar@neuromorph) u
     if [ "${WANT_BLUR:-1}" = 1 ]; then
         want+=("$BMS_UUID")
+        [ "${WANT_WINDOW_MENU:-1}" = 1 ] && want+=("$AURA_EXT_UUID")
     fi
     [ "${WANT_OSD:-1}" = 1 ] && want+=(custom-osd@neuromorph)
     if [ "${WANT_EXTRAS:-0}" = 1 ] && [ "${#EXT_EXTRA[@]}" -gt 0 ]; then
