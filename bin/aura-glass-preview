@@ -1,0 +1,240 @@
+#!/usr/bin/env bash
+# Show a candidate tint, transparency, radius, blur strength, popup blur or
+# window-blur scope on the real desktop, without writing anything install.sh
+# would read back on the next run.
+#
+#     aura-glass-preview begin
+#     aura-glass-preview set [--app-tint HEX] [--shell-tint HEX]
+#                            [--transparency LEVEL] [--radius-preset NAME]
+#                            [--radius-custom W,M,Q,N,D,P,O]
+#                            [--blur-strength PCT] [--popup-blur 0|1]
+#                            [--window-blur 0|1] [--scope gtk|all]
+#     aura-glass-preview revert
+#     aura-glass-preview status
+#
+# begin snapshots the installed CSS sheets, the blur-my-shell dconf subtree and
+# the $CONF_DIR memos that the functions below would otherwise overwrite. set
+# then calls the *same* apply_* functions lib/steps-css.sh and
+# lib/steps-dconf.sh give install.sh --settings-only, against a CSS baseline
+# reset from css/ on every call — the same reset install_css itself does before
+# a real install_transparency_css or apply_shell_tint_color, which is what
+# keeps a relative rewrite (transparency, shell tint) from compounding across
+# repeated calls while a slider is being dragged. Reusing the real functions
+# rather than a second copy of their math is deliberate: this project's whole
+# architecture is built around there being exactly one place that resolves a
+# flag into a file, and a preview with its own copy of that resolution would
+# drift from it within a release.
+#
+# The one thing set is not allowed to do is leave a $CONF_DIR memo different
+# from what it was before begin — every apply_* function below writes one as
+# its last step, so set restores the snapshot taken by begin immediately
+# afterwards. That is the whole safety property this script exists to keep:
+# Settings() in the GUI, and install.sh on the next real run, must see exactly
+# what was last actually applied, never a preview that happened to be showing.
+#
+# revert restores the CSS sheets and the blur-my-shell dconf subtree
+# byte-for-byte from the snapshot and re-splices, so closing a preview without
+# keeping it leaves the desktop exactly as it was before begin ran.
+set -euo pipefail
+
+CONF_DIR="$HOME/.config/aura-glass"
+MARKER="$CONF_DIR/preview-active"
+BACKUP="$CONF_DIR/preview-backup"
+
+if [ ! -r "$CONF_DIR/repo-path" ]; then
+    printf 'aura-glass-preview: %s/repo-path is missing — nothing installed to preview against.\n' "$CONF_DIR" >&2
+    exit 1
+fi
+REPO_ROOT="$(cat "$CONF_DIR/repo-path")"
+if [ ! -d "$REPO_ROOT" ]; then
+    printf 'aura-glass-preview: the checkout at %s is gone.\n' "$REPO_ROOT" >&2
+    exit 1
+fi
+
+# shellcheck source=../lib/common.sh
+. "$REPO_ROOT/lib/common.sh"
+# shellcheck source=../lib/steps.sh
+. "$REPO_ROOT/lib/steps.sh"
+# shellcheck source=../lib/steps-modes.sh
+. "$REPO_ROOT/lib/steps-modes.sh"
+# shellcheck source=../lib/steps-css.sh
+. "$REPO_ROOT/lib/steps-css.sh"
+# shellcheck source=../lib/steps-dconf.sh
+. "$REPO_ROOT/lib/steps-dconf.sh"
+# shellcheck source=../tokens/tokens.sh
+. "$REPO_ROOT/tokens/tokens.sh"
+
+BMS=/org/gnome/shell/extensions/blur-my-shell
+
+# The seven memos every function this script calls can write. Anything not on
+# this list is not touched by set, so it needs no place in the snapshot.
+PREVIEW_MEMOS="app-tint-color shell-tint-color app-transparency radius-preset radius-custom blur-strength popup-blur window-blur app-blur-scope app-blur-allow app-blur-block"
+
+usage() {
+    printf 'usage: aura-glass-preview begin|set [options]|revert|status\n' >&2
+    exit 2
+}
+
+require_begun() {
+    if [ ! -d "$BACKUP" ]; then
+        printf 'aura-glass-preview: no preview is active — run "begin" first.\n' >&2
+        exit 1
+    fi
+}
+
+# The literal `pipelines=` value dconf/core.ini ships, so a blur-strength
+# preview can always scale from the tuned 100% baseline rather than from
+# whatever a previous tick left in dconf — apply_blur_strength's own comment
+# spells out why compounding is the failure mode this avoids.
+shipped_pipelines() {
+    awk -F'=' '
+        /^\[extensions\/blur-my-shell\]/ { in_section = 1; next }
+        /^\[/ { in_section = 0 }
+        in_section && $1 == "pipelines" { sub(/^pipelines=/, ""); print; exit }
+    ' "$REPO_ROOT/dconf/core.ini"
+}
+
+cmd_begin() {
+    if [ -d "$BACKUP" ]; then
+        # Already running — a second slider move mid-drag, not a new preview.
+        # Nothing to snapshot again; the first begin's backup is still the
+        # truth of what to revert to.
+        exit 0
+    fi
+    mkdir -p "$BACKUP/memos"
+    local sheet
+    for sheet in "$CONF_DIR"/shell-*.css "$CONF_DIR"/gtk4-*.css "$CONF_DIR/gtk3-tweaks.css"; do
+        [ -f "$sheet" ] && cp -a "$sheet" "$BACKUP/"
+    done
+    local name
+    for name in $PREVIEW_MEMOS; do
+        [ -f "$CONF_DIR/$name" ] && cp -a "$CONF_DIR/$name" "$BACKUP/memos/"
+    done
+    dconf dump "$BMS/" > "$BACKUP/blur-my-shell.dconf"
+    touch "$MARKER"
+}
+
+# Put every memo set touches back to exactly what begin found — present or
+# absent, since a memo set created that did not exist before is as much a
+# change as one it edited.
+restore_memos() {
+    local name
+    for name in $PREVIEW_MEMOS; do
+        if [ -f "$BACKUP/memos/$name" ]; then
+            cp -a "$BACKUP/memos/$name" "$CONF_DIR/$name"
+        else
+            rm -f "$CONF_DIR/$name"
+        fi
+    done
+}
+
+cmd_set() {
+    require_begun
+
+    local app_tint="" shell_tint="" transparency="" radius_preset="" \
+        radius_custom="" blur_strength="" popup_blur="" window_blur="" scope=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --app-tint) app_tint="$2"; shift 2 ;;
+            --shell-tint) shell_tint="$2"; shift 2 ;;
+            --transparency) transparency="$2"; shift 2 ;;
+            --radius-preset) radius_preset="$2"; shift 2 ;;
+            --radius-custom) radius_custom="$2"; shift 2 ;;
+            --blur-strength) blur_strength="$2"; shift 2 ;;
+            --popup-blur) popup_blur="$2"; shift 2 ;;
+            --window-blur) window_blur="$2"; shift 2 ;;
+            --scope) scope="$2"; shift 2 ;;
+            *) usage ;;
+        esac
+    done
+
+    # Frosted or transparent only — solid mode removes the whole theme rather
+    # than tuning it, and is applied, never previewed.
+    export WANT_BLUR=1
+    export WANT_POPUP_BLUR="${popup_blur:-1}"
+    export APP_TRANSPARENCY="${transparency:-0}"
+    [ -n "$app_tint" ] && export APP_TINT_COLOR="$app_tint"
+    [ -n "$shell_tint" ] && export SHELL_TINT_COLOR="$shell_tint"
+
+    if [ -n "$radius_custom" ]; then
+        IFS=',' read -r TOKEN_RADIUS_WINDOW TOKEN_RADIUS_MENU \
+            TOKEN_RADIUS_QUICK_SETTINGS TOKEN_RADIUS_NOTIFICATION \
+            TOKEN_RADIUS_DIALOG TOKEN_RADIUS_POPUP TOKEN_RADIUS_OSD \
+            <<< "$radius_custom"
+    else
+        radius_preset_values "${radius_preset:-default}" \
+            || die "aura-glass-preview: unknown radius preset '$radius_preset'"
+    fi
+    export RADIUS_PRESET="${radius_preset:-custom}"
+
+    # install_css resets every sheet from css/ before it touches any of them —
+    # that reset is what makes calling this on every tick safe rather than
+    # cumulative. It ends by running aura-glass-apply itself, which splices the
+    # result into the theme and forces the shell to reload it.
+    install_css >/dev/null
+
+    apply_radius_dconf >/dev/null
+
+    export WINDOW_BLUR_EXPLICIT=1
+    export WANT_WINDOW_BLUR="${window_blur:-1}"
+    export APP_BLUR_SCOPE_EXPLICIT=1
+    export APP_BLUR_SCOPE="${scope:-gtk}"
+    apply_app_blur >/dev/null
+
+    export POPUP_BLUR_EXPLICIT=1
+    export WANT_POPUP_BLUR="${popup_blur:-1}"
+    apply_popup_blur >/dev/null
+
+    if [ -n "$blur_strength" ] && [ "$blur_strength" != 100 ]; then
+        local shipped
+        shipped="$(shipped_pipelines)"
+        if [ -n "$shipped" ]; then
+            dconf write "$BMS/pipelines" "$shipped"
+        fi
+        export BLUR_STRENGTH="$blur_strength"
+        apply_blur_strength >/dev/null
+    fi
+
+    restore_memos
+}
+
+cmd_revert() {
+    [ -d "$BACKUP" ] || exit 0
+
+    # Byte-for-byte: put back exactly the sheets begin found, and remove any
+    # set created that was not there before (shell-popup-blur.css toggled on
+    # mid-preview, say).
+    local sheet base
+    for sheet in "$CONF_DIR"/shell-*.css "$CONF_DIR"/gtk4-*.css "$CONF_DIR/gtk3-tweaks.css"; do
+        base="$(basename "$sheet")"
+        [ -f "$BACKUP/$base" ] || rm -f "$sheet"
+    done
+    for sheet in "$BACKUP"/*.css; do
+        [ -f "$sheet" ] && cp -a "$sheet" "$CONF_DIR/$(basename "$sheet")"
+    done
+
+    dconf reset -f "$BMS/"
+    dconf load "$BMS/" < "$BACKUP/blur-my-shell.dconf"
+
+    restore_memos
+
+    "$HOME/.local/bin/aura-glass-apply" >/dev/null
+
+    rm -rf "$BACKUP" "$MARKER"
+}
+
+cmd_status() {
+    if [ -d "$BACKUP" ]; then
+        printf 'active\n'
+    else
+        printf 'idle\n'
+    fi
+}
+
+case "${1:-}" in
+    begin)  shift; cmd_begin "$@" ;;
+    set)    shift; cmd_set "$@" ;;
+    revert) shift; cmd_revert "$@" ;;
+    status) shift; cmd_status "$@" ;;
+    *) usage ;;
+esac

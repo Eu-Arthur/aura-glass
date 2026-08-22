@@ -177,7 +177,22 @@ def plain_row(row, title, subtitle=None):
 
 
 def open_link(uri):
-    Gio.AppInfo.launch_default_for_uri(uri, None)
+    """Open uri in the default browser without touching our own stdio.
+
+    Gio.AppInfo.launch_default_for_uri spawns with fd 0/1/2 inherited, and
+    stdout here is the flags channel lib/steps-wizard.sh reads (see main()).
+    A browser that prints anything on launch — Chrome does, "Opening in
+    existing browser session." on stdout when a window is already open —
+    would land in the flags file and make install.sh die on "unknown
+    option". Gio.Subprocess gives control over that; the plain GAppInfo call
+    does not.
+    """
+    try:
+        Gio.Subprocess.new(
+            ["gio", "open", uri],
+            Gio.SubprocessFlags.STDOUT_SILENCE | Gio.SubprocessFlags.STDERR_SILENCE)
+    except GLib.Error:
+        pass
 
 
 def ext_catalogue(repo):
@@ -344,11 +359,31 @@ class Window(Adw.ApplicationWindow):
 
     # ---- page furniture -----------------------------------------------------
 
+    def _step_info(self, tag):
+        """(i, N) for a question page, or None for welcome and summary.
+
+        Recomputed against the live answers rather than a fixed count: blur
+        and blur-details are one question or two depending on the very first
+        answer on this page, and gdm depends on the machine rather than
+        anything asked at all — so the count a page opens on is the count
+        that is actually still ahead of it, not the seven PAGES always lists.
+        """
+        steps = [p for p in PAGES if p not in ("welcome", "summary")
+                and self.applies(p)]
+        if tag not in steps:
+            return None
+        return steps.index(tag) + 1, len(steps)
+
     def shell(self, tag, title, content, *, skippable=True, next_label="Next",
               on_next=None):
         """One page: a header, the content, and the buttons along the bottom."""
         view = Adw.ToolbarView()
-        view.add_top_bar(Adw.HeaderBar())
+        header = Adw.HeaderBar()
+        step = self._step_info(tag)
+        if step is not None:
+            header.set_title_widget(Adw.WindowTitle(
+                title=title, subtitle="Step %d of %d" % step))
+        view.add_top_bar(header)
         view.set_content(content)
 
         bar = Gtk.ActionBar()
@@ -785,26 +820,38 @@ class Window(Adw.ApplicationWindow):
         else:
             extras = "None"
 
+        # Every tag here was genuinely pushed to get to this page — advance
+        # pushes each applicable page in turn whether or not Skip was the
+        # button that moved past it — so pop_to_tag below always has
+        # somewhere real to go back to.
         rows = [
-            ("Accent", answers.accent.capitalize()),
-            ("Blur", blur),
-            ("Window transparency", transparency),
+            ("Accent", answers.accent.capitalize(), "accent"),
+            ("Blur", blur, "blur"),
+            ("Window transparency", transparency,
+             "blur-details" if answers.blur else "blur"),
             ("Icons", PACK_NAMES.get(answers.icons, answers.icons)
-             if answers.want_icons else "Kept as they are"),
+             if answers.want_icons else "Kept as they are", "icons"),
             ("Pointer", PACK_NAMES.get(answers.cursors, answers.cursors)
-             if answers.want_cursors else "Kept as they are"),
-            ("Volume pill", "Yes" if answers.want_osd else "GNOME's own OSD"),
-            ("Optional extensions", extras),
+             if answers.want_cursors else "Kept as they are", "cursors"),
+            ("Volume pill", "Yes" if answers.want_osd else "GNOME's own OSD",
+             "extensions"),
+            ("Optional extensions", extras, "extensions"),
         ]
         if self.gdm_present:
             rows.append(("Login screen",
-                         "Themed" if answers.gdm else "Left alone"))
+                         "Themed" if answers.gdm else "Left alone", "gdm"))
             rows.append(("Login screen monitors",
                          "Matched to yours" if answers.gdm_monitors
-                         else "Left alone"))
+                         else "Left alone", "gdm"))
 
-        for title, value in rows:
-            group.add(plain_row(Adw.ActionRow(), title, value))
+        # Activatable rather than a plain list: every answer here was a page
+        # back, and "that's wrong" should be one click from fixed rather than
+        # Cancel and the whole wizard again from Welcome.
+        for title, value, tag in rows:
+            row = plain_row(Adw.ActionRow(activatable=True), title, value)
+            row.add_suffix(Gtk.Image.new_from_icon_name("go-next-symbolic"))
+            row.connect("activated", lambda _r, t=tag: self.nav.pop_to_tag(t))
+            group.add(row)
         page.add(group)
 
         later = Adw.PreferencesGroup()
@@ -822,8 +869,16 @@ class Window(Adw.ApplicationWindow):
 
 class Application(Adw.Application):
     def __init__(self, repo, gdm_present):
+        # NON_UNIQUE: this is a one-shot subprocess whose exit code and
+        # stdout are the entire protocol (see the module docstring) — nothing
+        # is gained by owning APP_ID on the session bus, and doing so is a
+        # trap. If a run is ever orphaned (killed, crashed) while it still
+        # holds the name, a plain single-instance app.run() from the *next*
+        # ./install.sh returns immediately without activating, leaving
+        # self.result None — which reads as "cancelled" and silently exits
+        # the installer every time after, for no reason visible from here.
         super().__init__(application_id=APP_ID,
-                         flags=Gio.ApplicationFlags.DEFAULT_FLAGS)
+                         flags=Gio.ApplicationFlags.NON_UNIQUE)
         self.repo = repo
         self.gdm_present = gdm_present
         # None until Install is pressed. Closing the window any other way
@@ -855,13 +910,26 @@ def main():
         help="there is a GDM to theme, so ask about it")
     opts = parser.parse_args()
 
+    # Real fd 1 is reserved for install.sh's flags (see the module docstring)
+    # but is not ours alone for the life of the window: GTK/GLib work between
+    # here and Install can spawn things — open_link's browser is the one this
+    # was written for — that inherit fd 1 by default and print on it. Duping
+    # it aside and pointing the live fd 1 at /dev/null means anything spawned
+    # while the window is open writes there instead, whatever it is, and the
+    # flags still reach lib/steps-wizard.sh's tempfile through flags_fd.
+    flags_fd = os.dup(1)
+    devnull = os.open(os.devnull, os.O_WRONLY)
+    os.dup2(devnull, 1)
+    os.close(devnull)
+
     app = Application(opts.repo, opts.gdm_present)
     app.run([sys.argv[0]])
 
     if app.result is None:
         return 2
-    for token in app.result:
-        print(token)
+    with os.fdopen(flags_fd, "w") as flags:
+        for token in app.result:
+            print(token, file=flags)
     return 0
 
 

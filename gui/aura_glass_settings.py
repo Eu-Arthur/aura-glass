@@ -81,6 +81,7 @@ import json
 import math
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -399,26 +400,95 @@ WINDOW_BUTTON_LAYOUTS = [
 # Order is not only presentation — the builders run in it, and a page whose
 # widgets another page's builder reads has to come first. Glass before Apps is
 # the live case: the per-app list asks the blur rows which list is active.
+# ident, title, icon, builder, sidebar group. Two groups rather than eleven
+# flat rows: Appearance is everything that changes what the desktop looks
+# like, System is everything about the install itself. Uninstall carries no
+# group — it is still built into the stack (_reload and _mark_dirty still
+# need every widget to exist), but it does not get a sidebar row, because a
+# destructive page has no business sitting in the same list as Look used to.
+# The primary menu opens it instead; see _open_uninstall.
 NAV_SECTIONS = [
-    ("look", "Look", "applications-graphics-symbolic", "_build_look_page"),
+    ("glass", "Glass", "weather-fog-symbolic", "_build_glass_page",
+     "Appearance"),
+    ("appearance", "Appearance", "applications-graphics-symbolic",
+     "_build_appearance_page", "Appearance"),
     ("radius", "Corner rounding", "circle-outline-thick-symbolic",
-     "_build_radius_page"),
-    ("glass", "Glass", "weather-fog-symbolic", "_build_glass_page"),
-    ("apps", "Per-app blur", "view-list-symbolic", "_build_apps_page"),
-    ("windows", "Window controls", "window-new-symbolic",
-     "_build_window_controls_page"),
-    ("icons", "Icons and pointer", "folder-symbolic", "_build_icons_page"),
-    ("packages", "Packages", "package-x-generic-symbolic",
-     "_build_packages_page"),
+     "_build_radius_page", "Appearance"),
+    ("apps", "Per-app blur", "view-list-symbolic", "_build_apps_page",
+     "Appearance"),
     ("extensions", "Extensions", "application-x-addon-symbolic",
-     "_build_extensions_page"),
-    ("system", "System", "emblem-system-symbolic", "_build_system_page"),
+     "_build_extensions_page", "System"),
+    ("packages", "Packages", "package-x-generic-symbolic",
+     "_build_packages_page", "System"),
+    ("system", "System", "emblem-system-symbolic", "_build_system_page",
+     "System"),
     ("updates", "Updates", "software-update-available-symbolic",
-     "_build_updates_page"),
-    # Last, and on its own, because everything above it is a less drastic
-    # answer to "I do not want this bit".
-    ("uninstall", "Uninstall", "user-trash-symbolic", "_build_uninstall_page"),
+     "_build_updates_page", "System"),
+    ("uninstall", "Uninstall", "user-trash-symbolic", "_build_uninstall_page",
+     None),
 ]
+
+# Extra words each page answers to, beyond its own sidebar title, so a search
+# for "icon pack" lands on Appearance and "gdm" lands on System without either
+# word appearing in NAV_SECTIONS. Hand-kept rather than walked off the built
+# widgets: several of these pages are not Adw.PreferencesPage at all — Glass
+# is three tabs in a Box, System mixes custom rows with a refresh button — so
+# a generic tree-walk would have to guess at each one's shape rather than
+# simply saying what is on it, the same trade-off LIST_TEXT and EXT_TIERS
+# already make elsewhere in this file.
+SEARCH_INDEX = {
+    "glass": ["frosted", "transparent", "solid", "blur", "tint", "opacity",
+             "transparency", "popup blur", "window blur", "scope"],
+    "appearance": ["accent", "colour", "color", "font", "icon", "cursor",
+                  "pointer", "titlebar", "window buttons", "colloid",
+                  "reversal", "hatter", "mactahoe", "aosp"],
+    "radius": ["corner", "rounding", "square", "rounded", "pill"],
+    "apps": ["allow", "block", "per-app", "whitelist", "blacklist"],
+    "extensions": ["gnome extensions", "blur my shell", "space-bar",
+                  "vitals", "custom osd", "open bar"],
+    "packages": ["icon pack", "cursor pack", "remove pack", "disk"],
+    "system": ["dependencies", "rounded blur library", "gdm", "login screen",
+              "monitor", "panel blur", "password", "sudo"],
+    "updates": ["release", "version", "update check"],
+    "uninstall": ["remove", "revert", "delete"],
+}
+
+# install.sh flag -> (page ident, plain-words label), for the "N changes
+# pending" popover and the sidebar's dirty dots. Read off flags_against's own
+# output rather than folded into it: several of its flags carry a value that
+# is not this table's business (--accent purple, --app-transparency 0.90),
+# and building the label list from a separate table here is simpler and less
+# risky than turning flags_against's own precedence logic — mode baselines,
+# custom-vs-preset radius, the scope/level coupling — into data it would have
+# to read back out of.
+FLAG_LABELS = {
+    "--accent": ("appearance", "Accent colour"),
+    "--icons": ("appearance", "Icon pack"),
+    "--no-icons": ("appearance", "Icon pack"),
+    "--cursors": ("appearance", "Pointer"),
+    "--no-cursors": ("appearance", "Pointer"),
+    "--font": ("appearance", "Interface font"),
+    "--window-buttons": ("appearance", "Titlebar buttons"),
+    "--update-check": ("updates", "Daily update check"),
+    "--no-update-check": ("updates", "Daily update check"),
+    "--panel-blur-fix": ("system", "Panel blur fix"),
+    "--no-panel-blur-fix": ("system", "Panel blur fix"),
+    "--radius-preset": ("radius", "Corner rounding"),
+    "--radius-custom": ("radius", "Corner rounding"),
+    "--glass-mode": ("glass", "Glass mode"),
+    "--gtk-apps-blur": ("glass", "Blur scope"),
+    "--all-apps-blur": ("glass", "Blur scope"),
+    "--no-window-blur": ("glass", "Window blur"),
+    "--app-transparency": ("glass", "Window transparency"),
+    "--no-app-transparency": ("glass", "Window transparency"),
+    "--popup-blur": ("glass", "Popup blur"),
+    "--no-popup-blur": ("glass", "Popup blur"),
+    "--app-tint-color": ("glass", "App tint"),
+    "--shell-tint-color": ("glass", "Shell tint"),
+    "--blur-strength": ("glass", "Blur strength"),
+    "--app-blur-allow": ("apps", "Blur allow list"),
+    "--app-blur-block": ("apps", "Blur block list"),
+}
 
 
 # The families install.sh fetches, and the ones uninstall.sh --assets already
@@ -846,6 +916,14 @@ def window_css():
 .aura-badge.on {
   background-color: alpha(@accent_bg_color, 0.22);
   color: @accent_color;
+}
+
+/* One row's worth of unsaved changes, on the sidebar row that holds them —
+ * the same accent a dirty Apply button already carries, so the two read as
+ * one fact rather than two different ways of saying it. */
+.aura-dirty-dot {
+  background-color: @accent_bg_color;
+  border-radius: 99px;
 }
 
 /* The button behind a preset card is there for the click, the focus ring and
@@ -2772,6 +2850,25 @@ class Window(Adw.ApplicationWindow):
         # first edit.
         self._list_windows = {}
 
+        # Live preview: tint, transparency, radius, blur strength, popup blur
+        # and window-blur scope show on the real desktop as they move, through
+        # bin/aura-glass-preview — see that script for why calling it on every
+        # tick is safe. _preview_active is whether a preview is currently on
+        # the desktop (so Revert has something to do and the bar has something
+        # to say); _preview_timer debounces a still-moving slider so a preview
+        # is a good hundred milliseconds behind the pointer rather than a
+        # subprocess per pixel; _preview_css_providers are this window's own
+        # GTK4 half of it — see _reload_preview_css.
+        self._preview_enabled = True
+        self._preview_active = False
+        self._preview_timer = 0
+        self._preview_css_providers = []
+        # Set only by _on_close_request, on the way to closing over a dirty
+        # window that chose Apply rather than Discard — read once by
+        # _on_apply's own done() and cleared there, so an ordinary Apply
+        # elsewhere in the session never closes the window by accident.
+        self._close_after_apply = False
+
         # Every page is built up front rather than on first visit. _reload and
         # _mark_dirty both read every widget in the window — a page built later
         # would be a page whose rows do not exist when they run.
@@ -2779,12 +2876,25 @@ class Window(Adw.ApplicationWindow):
             transition_type=Gtk.StackTransitionType.CROSSFADE)
         self._sidebar = Gtk.ListBox(selection_mode=Gtk.SelectionMode.SINGLE)
         self._sidebar.add_css_class("navigation-sidebar")
-        for ident, title, icon, builder in NAV_SECTIONS:
+        self._sidebar_rows = {}
+        for ident, title, icon, builder, group in NAV_SECTIONS:
             self._stack.add_named(getattr(self, builder)(), ident)
+            if group is None:
+                continue
             row = Adw.ActionRow(title=title)
             row.add_prefix(Gtk.Image.new_from_icon_name(icon))
             row._section = ident
+            row._group = group
+            # Shown once _sync_pending puts this page among the ones with an
+            # unapplied edit on them — built here, hidden, rather than added
+            # and removed on every keystroke.
+            row._dot = Gtk.Box(width_request=6, height_request=6,
+                               valign=Gtk.Align.CENTER, visible=False)
+            row._dot.add_css_class("aura-dirty-dot")
+            row.add_suffix(row._dot)
             self._sidebar.append(row)
+            self._sidebar_rows[ident] = row
+        self._sidebar.set_header_func(self._sidebar_header)
         self._sidebar.connect("row-selected", self._on_section)
 
         self._toasts = Adw.ToastOverlay(child=self._stack)
@@ -2798,14 +2908,65 @@ class Window(Adw.ApplicationWindow):
         # show when a run fails, needs a line of its own — and a header bar is
         # the one place in the window with no room for one.
         content_view = Adw.ToolbarView(content=self._toasts)
-        content_view.add_top_bar(Adw.HeaderBar())
+        header = Adw.HeaderBar()
+        self._preview_toggle = Gtk.ToggleButton(
+            icon_name="view-reveal-symbolic", active=True,
+            tooltip_text="Live preview — show tint, transparency, radius, "
+                        "blur strength and popup blur on the desktop as you "
+                        "move them")
+        self._preview_toggle.connect("toggled", self._on_preview_toggle)
+        header.pack_end(self._preview_toggle)
+
+        # Uninstall left the sidebar (see NAV_SECTIONS) and lives here now,
+        # beside About rather than among the pages someone opens to retune a
+        # setting. Copy as command is on-brand for a window that is
+        # explicitly a front end for install.sh's own flags: it says so in
+        # exactly those words, for anyone who would rather paste one line into
+        # a terminal than keep clicking Apply.
+        menu = Gio.Menu()
+        general = Gio.Menu()
+        general.append("Copy as command", "win.copy-command")
+        menu.append_section(None, general)
+        danger = Gio.Menu()
+        danger.append("Uninstall…", "win.uninstall")
+        menu.append_section(None, danger)
+        about_section = Gio.Menu()
+        about_section.append("About Aura Glass", "win.about")
+        menu.append_section(None, about_section)
+        menu_button = Gtk.MenuButton(icon_name="open-menu-symbolic",
+                                     menu_model=menu,
+                                     tooltip_text="Main menu")
+        header.pack_end(menu_button)
+
+        copy_action = Gio.SimpleAction.new("copy-command", None)
+        copy_action.connect("activate", self._on_copy_command)
+        self.add_action(copy_action)
+        uninstall_action = Gio.SimpleAction.new("uninstall", None)
+        uninstall_action.connect("activate", self._open_uninstall)
+        self.add_action(uninstall_action)
+        about_action = Gio.SimpleAction.new("about", None)
+        about_action.connect("activate", self._on_about)
+        self.add_action(about_action)
+
+        content_view.add_top_bar(header)
         content_view.add_bottom_bar(self._build_apply_bar())
         self._content_page = Adw.NavigationPage(child=content_view,
                                                 title=NAV_SECTIONS[0][1])
 
+        # A search over eleven rows' worth of controls spread across eight
+        # pages is not there because eleven rows are hard to scan — it is
+        # there because "which of these has the icon pack" is a question
+        # this window used to answer by clicking through pages one at a
+        # time. See SEARCH_INDEX for what each page answers to.
+        self._search_entry = Gtk.SearchEntry(placeholder_text="Search settings")
+        self._search_entry.connect("search-changed", self._on_search_changed)
+        self._search_entry.connect("activate", self._on_search_changed)
+
+        sidebar_header = Adw.HeaderBar()
+        sidebar_header.set_title_widget(self._search_entry)
         sidebar_view = Adw.ToolbarView(
             content=Gtk.ScrolledWindow(child=self._sidebar, vexpand=True))
-        sidebar_view.add_top_bar(Adw.HeaderBar())
+        sidebar_view.add_top_bar(sidebar_header)
         sidebar_page = Adw.NavigationPage(child=sidebar_view,
                                           title="Aura Glass")
 
@@ -2814,6 +2975,23 @@ class Window(Adw.ApplicationWindow):
             min_sidebar_width=210, max_sidebar_width=260)
         self.set_content(split)
 
+        # Below 700sp the sidebar and the content pane no longer both fit at a
+        # width either can read at, so the split collapses into the one
+        # NavigationView the two pages already are — sidebar first, a back
+        # button to return to it — rather than the 920px floor this window
+        # used to have no way under.
+        narrow = Adw.Breakpoint.new(
+            Adw.BreakpointCondition.parse("max-width: 700sp"))
+        narrow.add_setter(split, "collapsed", True)
+        self.add_breakpoint(narrow)
+
+        search_shortcut = Gtk.ShortcutController()
+        search_shortcut.add_shortcut(Gtk.Shortcut(
+            trigger=Gtk.ShortcutTrigger.parse_string("<Control>f"),
+            action=Gtk.CallbackAction.new(
+                lambda *_a: self._search_entry.grab_focus() or True)))
+        self.add_controller(search_shortcut)
+
         self._sidebar.select_row(self._sidebar.get_row_at_index(0))
         self._sync_sensitivity()
 
@@ -2821,6 +2999,21 @@ class Window(Adw.ApplicationWindow):
         if repo is None:
             self._apply.set_sensitive(False)
             self._banner_missing_repo()
+
+        self.connect("close-request", self._on_close_request)
+        # A preview left running is this window's own crash, not the user's
+        # choice — the marker only outlives begin when nothing since has
+        # called revert. Cleared before anything else so a window that opens
+        # onto a stale preview is not mistaken for one still describing what
+        # the desktop is showing.
+        if repo is not None and os.path.exists(
+                os.path.join(CONF_DIR, "preview-active")):
+            self._preview_active = True
+            stream_command(
+                ["bash", os.path.join(repo, "bin", "aura-glass-preview"),
+                 "revert"], lambda _l: None, self._on_preview_reverted)
+            self._toasts.add_toast(Adw.Toast(
+                title="A preview from before was reverted"))
 
     def _build_apply_bar(self):
         """Apply, and everything a run of install.sh has to say, along the bottom.
@@ -2853,16 +3046,238 @@ class Window(Adw.ApplicationWindow):
             child=self._apply_expander,
             transition_type=Gtk.RevealerTransitionType.SLIDE_UP)
 
+        # What flags_against actually found, in words — shown only while
+        # there is something to show, beside the status line rather than
+        # replacing it: apply_status is what install.sh last printed, and a
+        # pending edit has not printed anything yet.
+        self._pending_button = Gtk.MenuButton(valign=Gtk.Align.CENTER,
+                                              visible=False)
+        self._pending_button.add_css_class("flat")
+        self._pending_list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
+        self._pending_list.add_css_class("boxed-list")
+        pending_popover = Gtk.Popover(child=Gtk.ScrolledWindow(
+            child=self._pending_list, max_content_height=300,
+            propagate_natural_height=True))
+        self._pending_button.set_popover(pending_popover)
+
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         row.append(self._apply_status)
+        row.append(self._pending_button)
         row.append(self._apply)
+
+        # Its own line above the Apply row, not folded into apply_status: that
+        # label says what install.sh last printed, and "Previewing" is not
+        # that — it is true continuously while nothing has run, which
+        # apply_status never is.
+        preview_label = Gtk.Label(
+            label="Previewing on the desktop — Apply to keep it",
+            xalign=0, hexpand=True, ellipsize=Pango.EllipsizeMode.END)
+        preview_label.add_css_class("dim-label")
+        preview_label.add_css_class("caption")
+        preview_revert = Gtk.Button(label="Revert", valign=Gtk.Align.CENTER)
+        preview_revert.add_css_class("flat")
+        preview_revert.connect("clicked", self._on_preview_revert_clicked)
+        preview_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
+                              spacing=12)
+        preview_row.append(preview_label)
+        preview_row.append(preview_revert)
+        self._preview_reveal = Gtk.Revealer(
+            child=preview_row,
+            transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN)
 
         bar = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8,
                       margin_top=8, margin_bottom=8,
                       margin_start=12, margin_end=12)
+        bar.append(self._preview_reveal)
         bar.append(self._apply_reveal)
         bar.append(row)
         return bar
+
+    # ---- live preview -------------------------------------------------------
+    #
+    # The flags a change in one of these can ever produce. Checked against
+    # flags_against's own output rather than kept as a second list of which
+    # rows are previewable, so a flag this window learns to send later is
+    # previewable the moment it is added here and not before — there is
+    # exactly one place that spells out what --settings-only accepts, and
+    # this borrows its answer rather than keeping a copy that could disagree
+    # with it.
+    _PREVIEWABLE_FLAGS = frozenset((
+        "--app-tint-color", "--shell-tint-color",
+        "--app-transparency", "--no-app-transparency",
+        "--radius-preset", "--radius-custom",
+        "--blur-strength",
+        "--popup-blur", "--no-popup-blur",
+        "--gtk-apps-blur", "--all-apps-blur", "--no-window-blur",
+    ))
+
+    def _on_preview_toggle(self, button):
+        self._preview_enabled = button.get_active()
+        if not self._preview_enabled:
+            self._preview_revert()
+
+    def _schedule_preview(self, args):
+        """Called from _mark_dirty on every control that touches Settings.
+
+        Most of those are not previewable at all — icons, cursors, the font,
+        the accent — so this only arms the debounce when flags_against says a
+        previewable flag is actually among the pending ones, and lets a
+        preview that is already on the desktop go if the last previewable
+        edit was just undone by hand.
+        """
+        if not self._preview_enabled or self._repo is None or self._running:
+            return
+        if self._glass_mode() == "solid":
+            self._preview_revert()
+            return
+        if not any(a in self._PREVIEWABLE_FLAGS for a in args):
+            self._preview_revert()
+            return
+        if self._preview_timer:
+            GLib.source_remove(self._preview_timer)
+        self._preview_timer = GLib.timeout_add(400, self._fire_preview)
+
+    def _fire_preview(self):
+        """Send what the widgets are asking for to the real desktop.
+
+        One shell invocation, begin chained onto set with &&, rather than two
+        round trips through stream_command: begin is a no-op once a preview
+        is already running, so chaining it here is what makes a still-moving
+        slider one process per tick instead of two.
+        """
+        self._preview_timer = 0
+        current = self._current()
+        script = os.path.join(self._repo, "bin", "aura-glass-preview")
+        window_blur = "0" if current.scope == "none" else "1"
+        scope = current.scope if current.scope != "none" else "gtk"
+        q = shlex.quote
+        cmd = ("%s begin && %s set --app-tint %s --shell-tint %s "
+              "--transparency %s --radius-custom %s --blur-strength %s "
+              "--popup-blur %s --window-blur %s --scope %s"
+              % (q(script), q(script), q(current.app_tint),
+                 q(current.shell_tint), q(current.transparency),
+                 q(",".join(str(v) for v in current.radius_custom)),
+                 q(str(current.blur_strength)),
+                 q("1" if current.popup_blur else "0"), q(window_blur),
+                 q(scope)))
+        stream_command(["bash", "-c", cmd], lambda _l: None,
+                       self._on_preview_set_done)
+        return False
+
+    def _on_preview_set_done(self, ok, message):
+        self._preview_active = True
+        self._sync_preview_bar()
+        if ok:
+            self._reload_preview_css()
+        else:
+            self._toasts.add_toast(Adw.Toast(
+                title="Preview failed — %s" % message))
+
+    def _reload_preview_css(self):
+        """The GTK4 half of the preview: this window wearing its own candidate.
+
+        GTK only reads ~/.config/gtk-4.0/gtk.css at startup, so a window that
+        is already open would otherwise show every previewed change but its
+        own. What aura-glass-preview set just wrote there is already
+        flattened and accent-rewritten — bin/aura-glass-apply did that — so
+        this reads it back rather than a second copy of that rewrite, and
+        loads it one priority above GTK's own automatic USER provider so a
+        stale automatic load from startup cannot outrank it.
+        """
+        self._clear_preview_css()
+        display = Gdk.Display.get_default()
+        for name in ("gtk.css", "gtk-dark.css"):
+            path = os.path.join(GLib.get_user_config_dir(), "gtk-4.0", name)
+            if not os.path.exists(path):
+                continue
+            provider = Gtk.CssProvider()
+            try:
+                provider.load_from_path(path)
+            except GLib.Error:
+                continue
+            Gtk.StyleContext.add_provider_for_display(
+                display, provider, Gtk.STYLE_PROVIDER_PRIORITY_USER + 1)
+            self._preview_css_providers.append(provider)
+
+    def _clear_preview_css(self):
+        display = Gdk.Display.get_default()
+        for provider in self._preview_css_providers:
+            Gtk.StyleContext.remove_provider_for_display(display, provider)
+        self._preview_css_providers = []
+
+    def _on_preview_revert_clicked(self, _button):
+        self._preview_revert()
+
+    def _preview_revert(self):
+        if self._preview_timer:
+            GLib.source_remove(self._preview_timer)
+            self._preview_timer = 0
+        if not self._preview_active or self._repo is None:
+            return
+        self._preview_active = False
+        self._sync_preview_bar()
+        script = os.path.join(self._repo, "bin", "aura-glass-preview")
+        stream_command(["bash", script, "revert"], lambda _l: None,
+                       self._on_preview_reverted)
+
+    def _on_preview_reverted(self, ok, message):
+        self._clear_preview_css()
+        if not ok:
+            self._toasts.add_toast(Adw.Toast(
+                title="Could not revert the preview — %s" % message))
+
+    def _sync_preview_bar(self):
+        self._preview_reveal.set_reveal_child(self._preview_active)
+
+    def _on_close_request(self, _window):
+        # Synchronous and on the way out, not fired-and-forgotten: a preview
+        # that outlives this window is indistinguishable from a crash, and
+        # the whole safety property aura-glass-preview keeps depends on
+        # revert actually having run before anything reads $CONF_DIR again.
+        # Ahead of the dirty check below, not after it: a preview belongs to
+        # this window whether or not the edit behind it has been applied, and
+        # a Cancel on the dialog that follows must not leave it half torn
+        # down.
+        if self._preview_timer:
+            GLib.source_remove(self._preview_timer)
+            self._preview_timer = 0
+        if self._preview_active and self._repo is not None:
+            script = os.path.join(self._repo, "bin", "aura-glass-preview")
+            try:
+                subprocess.run(["bash", script, "revert"], timeout=15,
+                               check=False)
+            except (OSError, subprocess.SubprocessError):
+                pass
+            self._preview_active = False
+
+        if not self._apply.get_sensitive():
+            return False
+
+        dialog = AlertWindow(
+            heading="Apply before closing?",
+            body="There are changes here that have not been applied yet. "
+                "Closing now leaves the desktop as it was before you made "
+                "them.")
+        dialog.add_response("cancel", "Cancel")
+        dialog.add_response("discard", "Discard")
+        dialog.add_response("apply", "Apply")
+        dialog.set_response_appearance("apply",
+                                       Adw.ResponseAppearance.SUGGESTED)
+        dialog.set_response_appearance("discard",
+                                       Adw.ResponseAppearance.DESTRUCTIVE)
+        dialog.set_default_response("cancel")
+        dialog.set_close_response("cancel")
+
+        def response(_d, answer):
+            if answer == "discard":
+                self.destroy()
+            elif answer == "apply":
+                self._close_after_apply = True
+                self._on_apply(self._apply)
+
+        dialog.connect("response", response)
+        open_over(dialog, self)
+        return True
 
     # ---- one run of install.sh, in this window ----------------------------
 
@@ -2926,6 +3341,66 @@ class Window(Adw.ApplicationWindow):
         self._stack.set_visible_child_name(row._section)
         self._content_page.set_title(row.get_title())
 
+    def _sidebar_header(self, row, before):
+        """A caption above the first row of each group, and none above the rest.
+
+        Gtk.ListBox asks for this once per row rather than once per group, so
+        the group is read off the row itself (_group, set alongside _section
+        when the row was built) and compared against whatever came before it
+        — the only two ways that comparison can land are "new group, show a
+        caption" and "same group, show nothing".
+        """
+        prev = before._group if before is not None else None
+        if row._group == prev:
+            row.set_header(None)
+            return
+        label = Gtk.Label(label=row._group.upper(), xalign=0)
+        label.add_css_class("caption-heading")
+        label.add_css_class("dim-label")
+        box = Gtk.Box(margin_top=12 if before is not None else 2,
+                      margin_bottom=2, margin_start=12, margin_end=6)
+        box.append(label)
+        row.set_header(box)
+
+    def _open_uninstall(self, *_a):
+        """Reached from the primary menu, not the sidebar — see NAV_SECTIONS."""
+        self._sidebar.unselect_all()
+        self._stack.set_visible_child_name("uninstall")
+        self._content_page.set_title("Uninstall")
+
+    def _on_search_changed(self, entry):
+        text = entry.get_text().strip().lower()
+        if not text:
+            return
+        for ident, title, _icon, _builder, group in NAV_SECTIONS:
+            if group is None:
+                continue
+            haystack = [title.lower()] + SEARCH_INDEX.get(ident, [])
+            if any(text in h for h in haystack):
+                self._sidebar.select_row(self._sidebar_rows[ident])
+                return
+
+    def _on_copy_command(self, *_a):
+        args = self._current().flags_against(self._applied)
+        if not args:
+            self._toasts.add_toast(Adw.Toast(title="Nothing pending to copy"))
+            return
+        command = "./install.sh --settings-only --yes " + " ".join(
+            shlex.quote(a) for a in args)
+        self.get_clipboard().set(command)
+        self._toasts.add_toast(Adw.Toast(title="Command copied"))
+
+    def _on_about(self, *_a):
+        about = Adw.AboutDialog(
+            application_name="Aura Glass",
+            application_icon=APP_ID,
+            version=installed_version(self._repo) or "unknown",
+            developer_name="DevWebeloper",
+            website="https://github.com/DevWebeloper/aura-glass",
+            issue_url="https://github.com/DevWebeloper/aura-glass/issues",
+            license_type=Gtk.License.MIT_X11)
+        about.present(self)
+
     # ---- construction -----------------------------------------------------
 
     def _combo(self, title, subtitle, options, current, key):
@@ -2961,7 +3436,16 @@ class Window(Adw.ApplicationWindow):
         if 0 <= i < len(row._subs):
             row.set_subtitle(row._subs[i])
 
-    def _build_look_page(self):
+    def _build_appearance_page(self):
+        """Accent, font, icons, pointer and titlebar buttons — one page.
+
+        These were three separate sidebar rows (Look, Icons and pointer,
+        Window controls) for no reason stronger than having been added at
+        different times: none of the three holds more than a handful of
+        rows, and a sidebar someone has to read past eight other rows to find
+        "where is the icon pack" is worse than one where Appearance is where
+        everything that changes what the desktop looks like lives.
+        """
         page = Adw.PreferencesPage()
 
         look = Adw.PreferencesGroup(
@@ -2986,8 +3470,45 @@ class Window(Adw.ApplicationWindow):
         self._font_row = self._combo(
             "Interface font", "", FONTS, self._applied.font, "font")
         look.add(self._font_row)
-
         page.add(look)
+
+        # A pack you have already installed applies instantly. One you have
+        # not is downloaded first, so Apply can take a minute and needs the
+        # network — the two rows below say so themselves.
+        packs = Adw.PreferencesGroup(
+            title="Icons and pointer",
+            description="A pack you have already installed applies instantly. "
+                        "One you have not is downloaded first, so Apply can take "
+                        "a minute and needs the network.")
+        family, color = split_icons(self._applied.icons)
+        self._icons_row = self._combo(
+            "Icon pack", "", ICON_PACKS, family, "icons")
+        packs.add(self._icons_row)
+
+        # Its own row rather than nine entries folded into the pack list: the
+        # colour is not the accent, and a pack list that spelled out every
+        # colour would say it was.
+        self._icon_color_row = self._combo(
+            "Icon colour", "", ICON_COLORS[family], color, "icon_color")
+        packs.add(self._icon_color_row)
+        self._cursors_row = self._combo(
+            "Pointer", "", CURSOR_PACKS, self._applied.cursors, "cursors")
+        packs.add(self._cursors_row)
+        page.add(packs)
+
+        buttons = Adw.PreferencesGroup(
+            title="Titlebar buttons",
+            description="A GNOME setting rather than one of the theme's, shared "
+                        "with Tweaks — so it is left alone until you pick one "
+                        "here, and picking Leave as it is again leaves the last "
+                        "one you applied standing rather than guessing a way "
+                        "back.")
+        self._window_buttons_row = self._combo(
+            "Buttons", "", WINDOW_BUTTON_LAYOUTS,
+            self._applied.window_buttons, "window_buttons")
+        buttons.add(self._window_buttons_row)
+        page.add(buttons)
+
         return page
 
     def _build_radius_page(self):
@@ -3222,37 +3743,6 @@ class Window(Adw.ApplicationWindow):
         self._loading = was
         self._sync_radius_state()
         self._mark_dirty()
-
-    def _build_icons_page(self):
-        page = Adw.PreferencesPage()
-
-        # Their own page, because these two can reach the network — as can the
-        # font row on the Look page, which says so in its own subtitle rather
-        # than being dragged over here away from the accent it belongs beside.
-        # Switching to a pack already on disk is instant — install_icons and
-        # install_cursors both skip when the theme is there — and a pack that is
-        # not gets fetched, which the Apply log shows.
-        packs = Adw.PreferencesGroup(
-            title="Icons and pointer",
-            description="A pack you have already installed applies instantly. "
-                        "One you have not is downloaded first, so Apply can take "
-                        "a minute and needs the network.")
-        family, color = split_icons(self._applied.icons)
-        self._icons_row = self._combo(
-            "Icon pack", "", ICON_PACKS, family, "icons")
-        packs.add(self._icons_row)
-
-        # Its own row rather than nine entries folded into the pack list: the
-        # colour is not the accent, and a pack list that spelled out every
-        # colour would say it was.
-        self._icon_color_row = self._combo(
-            "Icon colour", "", ICON_COLORS[family], color, "icon_color")
-        packs.add(self._icon_color_row)
-        self._cursors_row = self._combo(
-            "Pointer", "", CURSOR_PACKS, self._applied.cursors, "cursors")
-        packs.add(self._cursors_row)
-        page.add(packs)
-        return page
 
     def _build_glass_page(self):
         """The three modes, as three tabs.
@@ -3869,23 +4359,6 @@ class Window(Adw.ApplicationWindow):
             return
         self._mark_dirty()
 
-    def _build_window_controls_page(self):
-        page = Adw.PreferencesPage()
-
-        group = Adw.PreferencesGroup(
-            title="Titlebar buttons",
-            description="A GNOME setting rather than one of the theme's, shared "
-                        "with Tweaks — so it is left alone until you pick one "
-                        "here, and picking Leave as it is again leaves the last "
-                        "one you applied standing rather than guessing a way "
-                        "back.")
-        self._window_buttons_row = self._combo(
-            "Buttons", "", WINDOW_BUTTON_LAYOUTS,
-            self._applied.window_buttons, "window_buttons")
-        group.add(self._window_buttons_row)
-        page.add(group)
-        return page
-
     # ---- extensions ---------------------------------------------------------
 
     EXT_TIERS = [
@@ -4011,8 +4484,47 @@ class Window(Adw.ApplicationWindow):
             self._ext_rows.append((group, row))
 
     def _on_ext_toggled(self, row, _param):
-        self._run_ext("enable" if row.get_active() else "disable", row._uuid,
-                      title="Enabling" if row.get_active() else "Disabling")
+        enabling = row.get_active()
+        self._run_ext_toggle(
+            "enable" if enabling else "disable", row._uuid,
+            "Enabling the extension…" if enabling else "Disabling the extension…",
+            "Extension enabled" if enabling else "Extension disabled")
+
+    def _run_ext_toggle(self, action, uuid, started_message, done_message):
+        """enable/disable through the bottom bar, not a modal.
+
+        _run_ext below stays modal for install, remove and fitting a pack —
+        those can genuinely take a while and are asked for far less often
+        than a switch gets flipped, which is the one action on this page
+        that used to open a window of its own for every single click.
+        """
+        if self._running:
+            self._toasts.add_toast(Adw.Toast(
+                title="Already applying something — try again in a moment"))
+            return
+        if self._repo is None:
+            self._toasts.add_toast(Adw.Toast(
+                title="The aura-glass checkout is gone"))
+            return
+        argv = ["bash", os.path.join(self._repo, "bin", "aura-glass-ext"),
+                action, uuid]
+        self._run_started(started_message)
+        log_append(self._apply_log, "$ " + " ".join(argv[1:]))
+
+        def done(ok, message):
+            # Re-read rather than assume: an extension can decline to enable
+            # until the next login, and the row should say which happened.
+            self._rebuild_extensions()
+            if ok:
+                self._run_finished(True, done_message)
+                return
+            failed = "Could not %s the extension" % action
+            if message:
+                failed = "%s — %s" % (failed, message)
+            self._run_finished(False, failed)
+            self._toasts.add_toast(Adw.Toast(title=failed))
+
+        stream_command(argv, self._run_line, done)
 
     def _on_ext_action(self, _button, uuid, action):
         self._run_ext(action, uuid,
@@ -4118,12 +4630,15 @@ class Window(Adw.ApplicationWindow):
                         "so this window opens a terminal for them rather than "
                         "starting something that would silently decline. "
                         "Nothing here is applied by the Apply button.")
-        reread = Gtk.Button(icon_name="view-refresh-symbolic",
-                            valign=Gtk.Align.CENTER,
-                            tooltip_text="Re-read after a terminal has closed")
-        reread.add_css_class("flat")
-        reread.connect("clicked", lambda _b: self._refresh_system())
-        group.set_header_suffix(reread)
+        # Watched rather than left to a Re-read button: there was never a
+        # signal that a spawned terminal finished, only a signal that the
+        # stamp file it eventually writes changed — and Gio.FileMonitor is
+        # exactly that signal, arriving whether the terminal that wrote it is
+        # still this window's business or long since closed.
+        self._system_monitor = Gio.File.new_for_path(CONF_DIR).monitor_directory(
+            Gio.FileMonitorFlags.NONE, None)
+        self._system_monitor.connect("changed", self._on_system_dir_changed)
+        self._system_watch_timer = 0
 
         self._deps_row = Adw.ActionRow(
             title="Command line dependencies",
@@ -4191,12 +4706,27 @@ class Window(Adw.ApplicationWindow):
         self._check_deps()
         return page
 
-    def _refresh_system(self):
-        """Re-read the stamp files, for after a spawned terminal has been and
-        gone. There is no signal that it finished — that is the price of it
-        having a keyboard — so this is on a button."""
+    # The three stamp files _sync_system reads. Anything else changing under
+    # $CONF_DIR — a CSS sheet mid-preview, a memo Apply just wrote — is not
+    # this page's business, so the monitor filters to these rather than
+    # re-syncing on every unrelated write.
+    _SYSTEM_STAMPS = ("rounded-blur", "gdm-monitors-synced", "gdm-installed")
+
+    def _on_system_dir_changed(self, _monitor, file, _other, _event):
+        if file.get_basename() not in self._SYSTEM_STAMPS:
+            return
+        # Debounced rather than synced on the first event: a terminal command
+        # can touch a stamp file and then rewrite it moments later as it
+        # finishes, and re-reading between the two would show a page that
+        # briefly disagrees with itself.
+        if self._system_watch_timer:
+            GLib.source_remove(self._system_watch_timer)
+        self._system_watch_timer = GLib.timeout_add(500, self._on_system_settled)
+
+    def _on_system_settled(self):
+        self._system_watch_timer = 0
         self._sync_system()
-        self._toasts.add_toast(Adw.Toast(title="Re-read"))
+        return False
 
     def _on_gdm_monitors(self, _button):
         synced = os.path.exists(os.path.join(CONF_DIR, "gdm-monitors-synced"))
@@ -4273,16 +4803,14 @@ class Window(Adw.ApplicationWindow):
         synced = os.path.exists(os.path.join(CONF_DIR, "gdm-monitors-synced"))
         self._gdm_monitors_button.set_label("Remove" if synced else "Sync")
         self._gdm_monitors_row.set_subtitle(
-            "Synced, as of the last time this window looked. Use Re-read after "
-            "the terminal closes" if synced else
+            "Synced" if synced else
             "Copies ~/.config/monitors.xml where GDM will read it, so the login "
             "screen comes up on the same monitor your session does")
 
         gdm = read_memo("gdm-installed")
         self._gdm_button.set_label("Remove" if gdm else "Theme it")
         self._gdm_row.set_subtitle(
-            "Themed, as of the last time this window looked. Use Re-read after "
-            "the terminal closes" if gdm else
+            "Themed" if gdm else
             "Blurs and darkens your wallpaper behind the login screen. Needs "
             "your password, and keeps GNOME's accent rather than this theme's")
 
@@ -4973,9 +5501,45 @@ class Window(Adw.ApplicationWindow):
             not in ("keep", "original"))
 
     def _mark_dirty(self):
-        dirty = bool(self._current().flags_against(self._applied))
-        self._apply.set_sensitive(dirty and self._repo is not None
+        args = self._current().flags_against(self._applied)
+        self._apply.set_sensitive(bool(args) and self._repo is not None
                                   and not self._running)
+        self._sync_pending(args)
+        self._schedule_preview(args)
+
+    def _sync_pending(self, args):
+        """The Apply bar's "N changes" popover, and the sidebar's dirty dots.
+
+        Both read off the same flag list flags_against just produced, through
+        FLAG_LABELS — a flag it sent that FLAG_LABELS does not know about
+        shows nowhere here, which is a label to add rather than a reason for
+        this to guess at one.
+        """
+        pages, labels = set(), []
+        for flag in args:
+            hit = FLAG_LABELS.get(flag)
+            if hit is None:
+                continue
+            page, label = hit
+            pages.add(page)
+            if label not in labels:
+                labels.append(label)
+
+        for ident, row in self._sidebar_rows.items():
+            row._dot.set_visible(ident in pages)
+
+        child = self._pending_list.get_row_at_index(0)
+        while child is not None:
+            self._pending_list.remove(child)
+            child = self._pending_list.get_row_at_index(0)
+        if not labels:
+            self._pending_button.set_visible(False)
+            return
+        for label in labels:
+            self._pending_list.append(Adw.ActionRow(title=label))
+        self._pending_button.set_label(
+            "%d change%s" % (len(labels), "" if len(labels) == 1 else "s"))
+        self._pending_button.set_visible(True)
 
     def _sync_transparency_value(self, scale):
         scale._readout.set_label("%d%%" % round(scale.get_value()))
@@ -5082,7 +5646,7 @@ class Window(Adw.ApplicationWindow):
         self._rebuild_app_list()
         self._sync_sensitivity()
         self._sync_tint_preview()
-        self._apply.set_sensitive(False)
+        self._mark_dirty()
 
     # ---- updates ----------------------------------------------------------
 
@@ -5270,6 +5834,24 @@ class Window(Adw.ApplicationWindow):
         args = self._current().flags_against(self._applied)
         if not args or self._repo is None:
             return
+        # install.sh is about to write exactly what the preview has been
+        # showing, for real — so the preview's own record of "what to go back
+        # to" is discarded here rather than reverted: reverting first would
+        # put the desktop back on the old look for the second it takes
+        # --settings-only to run, which is the flicker a preview exists to
+        # avoid, not cause.
+        if self._preview_timer:
+            GLib.source_remove(self._preview_timer)
+            self._preview_timer = 0
+        if self._preview_active:
+            self._preview_active = False
+            self._sync_preview_bar()
+            shutil.rmtree(os.path.join(CONF_DIR, "preview-backup"),
+                          ignore_errors=True)
+            try:
+                os.remove(os.path.join(CONF_DIR, "preview-active"))
+            except FileNotFoundError:
+                pass
         argv = ["bash", os.path.join(self._repo, "install.sh"),
                 "--settings-only", "--yes"] + args
         self._run_started("Reapplying the dconf preset, the CSS and the "
@@ -5277,6 +5859,12 @@ class Window(Adw.ApplicationWindow):
         log_append(self._apply_log, "$ " + " ".join(argv[1:]))
 
         def done(ok, message):
+            # Read once and cleared here regardless of outcome: a failed
+            # Apply started from the close dialog leaves the window open on
+            # the error rather than closing over it, and the flag must not
+            # still be armed for whichever Apply comes next.
+            close_after = self._close_after_apply
+            self._close_after_apply = False
             if not ok:
                 failed = "install.sh failed"
                 if message:
@@ -5292,6 +5880,8 @@ class Window(Adw.ApplicationWindow):
             self._reload()
             self._run_finished(True, said)
             self._toasts.add_toast(Adw.Toast(title=said))
+            if close_after:
+                self.destroy()
 
         stream_command(argv, self._run_line, done)
 
