@@ -1,8 +1,11 @@
-/* ---------- WC-1  Monochrome Minimal window controls ----------
- * The theme painted coloured discs (#ff4245 / #ffd600 / #30d158) with a heavy
- * bevel and hid the glyph with `color: transparent`. Selectors below mirror
- * the theme's own specificity so that appending is enough to win.
+/* ---------- WC variant: flat ----------
+ * No disc at all, ever — the glyph brightens instead, modelled on vinceliuice/Graphite-gtk-theme.
+ * Loaded after gtk4-50-window-controls.css (this file is
+ * un-prefixed, so it applies last) and matches its selector
+ * groups so it wins on source order at equal specificity,
+ * without having to out-specify the base sheet again.
  */
+
 button.titlebutton,
 button.titlebutton.close,
 button.titlebutton.minimize,
@@ -46,16 +49,8 @@ headerbar.default-decoration button.titlebutton.maximize,
 .solid-csd headerbar:not(.default-decoration) button.titlebutton.close,
 .solid-csd headerbar:not(.default-decoration) button.titlebutton.minimize,
 .solid-csd headerbar:not(.default-decoration) button.titlebutton.maximize {
-  min-width: 28px;
-  min-height: 28px;
-  padding: 0;
-  margin: 0 2px;
-  border-radius: 9999px;
   background-color: transparent;
-  background-image: none;
-  box-shadow: none;
-  border: none;
-  color: alpha(currentColor, 0.6);
+  color: rgba(255, 255, 255, 0.75);
 }
 
 button.titlebutton:hover,
@@ -101,13 +96,10 @@ headerbar.default-decoration button.titlebutton.maximize:hover,
 .solid-csd headerbar:not(.default-decoration) button.titlebutton.close:hover,
 .solid-csd headerbar:not(.default-decoration) button.titlebutton.minimize:hover,
 .solid-csd headerbar:not(.default-decoration) button.titlebutton.maximize:hover {
-  background-color: rgba(255, 255, 255, 0.14);
-  background-image: none;
-  box-shadow: none;
+  background-color: transparent;
   color: #ffffff;
 }
 
-/* Close is the only control that earns colour, and only under the pointer. */
 button.titlebutton.close:hover,
 headerbar button.titlebutton.close:hover,
 .csd headerbar button.titlebutton.close:hover,
@@ -119,56 +111,10 @@ headerbar.default-decoration button.titlebutton.close:hover,
 .csd .titlebar.default-decoration button.titlebutton.close:hover,
 .solid-csd headerbar button.titlebutton.close:hover,
 .solid-csd headerbar:not(.default-decoration) button.titlebutton.close:hover {
-  background-color: #ff5f57;
-  background-image: none;
-  box-shadow: none;
-  color: #ffffff;
+  background-color: transparent;
+  color: #ff5f57;
 }
 
-/* Active & Checked states */
-button.titlebutton:active,
-button.titlebutton:checked,
-headerbar button.titlebutton:active,
-headerbar button.titlebutton:checked,
-.titlebar button.titlebutton:active,
-.titlebar button.titlebutton:checked,
-headerbar.default-decoration button.titlebutton:active,
-headerbar.default-decoration button.titlebutton:checked,
-.titlebar.default-decoration button.titlebutton:active,
-.titlebar.default-decoration button.titlebutton:checked,
-.solid-csd headerbar button.titlebutton:active,
-.solid-csd headerbar button.titlebutton:checked {
-  background-color: rgba(255, 255, 255, 0.24);
-  background-image: none;
-  box-shadow: none;
-  color: #ffffff;
-}
-
-button.titlebutton.close:active,
-button.titlebutton.close:checked,
-headerbar button.titlebutton.close:active,
-headerbar button.titlebutton.close:checked,
-.titlebar button.titlebutton.close:active,
-.titlebar button.titlebutton.close:checked,
-headerbar.default-decoration button.titlebutton.close:active,
-headerbar.default-decoration button.titlebutton.close:checked,
-.titlebar.default-decoration button.titlebutton.close:active,
-.titlebar.default-decoration button.titlebutton.close:checked,
-.solid-csd headerbar button.titlebutton.close:active,
-.solid-csd headerbar button.titlebutton.close:checked {
-  background-color: #e0443e;
-  background-image: none;
-  box-shadow: none;
-  color: #ffffff;
-}
-
-/* The theme paints the macOS traffic lights on the image *inside* each button
- * — `windowcontrols > button.close > image { background-color: #fd5f51 }` and
- * friends — and blanks the button itself with `color: transparent`. Styling
- * only the button, as everything above does, therefore changed nothing on
- * GTK4: the coloured circles are a layer further in. GTK3 has no such child,
- * which is why the rules above did land there and the two toolkits disagreed.
- */
 headerbar button.titlebutton > image,
 .titlebar button.titlebutton > image,
 headerbar.default-decoration button.titlebutton > image,
@@ -183,59 +129,19 @@ windowcontrols.start > button.maximize > image,
 windowcontrols.end > button.close > image,
 windowcontrols.end > button.minimize > image,
 windowcontrols.end > button.maximize > image {
-  background-color: transparent;
-  background-image: none;
-  box-shadow: none;
-  margin: 0;
-  padding: 0;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.75);
 }
 
-windowcontrols > button.close > image:hover,
-windowcontrols > button.minimize > image:hover,
-windowcontrols > button.maximize > image:hover,
-windowcontrols.start > button.close > image:hover,
-windowcontrols.start > button.minimize > image:hover,
-windowcontrols.start > button.maximize > image:hover,
-windowcontrols.end > button.close > image:hover,
-windowcontrols.end > button.minimize > image:hover,
-windowcontrols.end > button.maximize > image:hover,
-windowcontrols > button.close > image:active,
-windowcontrols > button.minimize > image:active,
-windowcontrols > button.maximize > image:active,
-windowcontrols.start > button.close > image:active,
-windowcontrols.start > button.minimize > image:active,
-windowcontrols.start > button.maximize > image:active,
-windowcontrols.end > button.close > image:active,
-windowcontrols.end > button.minimize > image:active,
-windowcontrols.end > button.maximize > image:active {
-  background-color: transparent;
-  background-image: none;
-  box-shadow: none;
-  color: #ffffff;
-}
-
-/* `color: transparent` on the button is what hides the symbolic glyph, so the
- * glyph has to be given back before the monochrome control has anything to
- * show. Specificity beats the theme's `windowcontrols > button.close`.
- */
 headerbar windowcontrols > button.titlebutton,
 .titlebar windowcontrols > button.titlebutton,
 windowcontrols > button.titlebutton.close,
 windowcontrols > button.titlebutton.minimize,
 windowcontrols > button.titlebutton.maximize {
-  color: alpha(currentColor, 0.6);
+  color: rgba(255, 255, 255, 0.75);
 }
 
-headerbar windowcontrols > button.titlebutton:hover,
-.titlebar windowcontrols > button.titlebutton:hover,
-windowcontrols > button.titlebutton.close:hover,
-windowcontrols > button.titlebutton.minimize:hover,
-windowcontrols > button.titlebutton.maximize:hover {
-  color: #ffffff;
+windowcontrols > button.close > image:hover,
+windowcontrols.start > button.close > image:hover,
+windowcontrols.end > button.close > image:hover {
+  color: #ff5f57;
 }
-
-button.titlebutton:backdrop {
-  opacity: 0.45;
-}
-

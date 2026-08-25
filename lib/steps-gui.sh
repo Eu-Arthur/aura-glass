@@ -38,6 +38,12 @@ install_gui() {
         "$GUI_DIR/aura_glass_settings.py"
     run install -Dm755 "$REPO_ROOT/bin/aura-glass-settings" \
         "$HOME/.local/bin/aura-glass-settings"
+    # Backs the settings window's live preview: begin/set/revert reapply the
+    # CSS-only and dconf-only subset of --settings-only, memo-free, so a
+    # slider can show its result on the real desktop before Apply commits it.
+    # See the script's own header for why it is safe to call on every tick.
+    run install -Dm755 "$REPO_ROOT/bin/aura-glass-preview" \
+        "$HOME/.local/bin/aura-glass-preview"
     run install -Dm644 "$REPO_ROOT/gui/icons/$GUI_APP_ID.svg" "$GUI_ICON"
     if [ "${DRY_RUN:-0}" != 1 ] && command -v gtk-update-icon-cache >/dev/null 2>&1; then
         gtk-update-icon-cache -qft "$HOME/.local/share/icons/hicolor" 2>/dev/null || true

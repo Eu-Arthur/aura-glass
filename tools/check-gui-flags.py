@@ -45,7 +45,7 @@ def state(**kw):
     s = Settings.__new__(Settings)
     s.accent = kw.get("accent", "purple")
     s.radius = kw.get("radius", "default")
-    s.radius_custom = kw.get("radius_custom", (30, 26, 33, 20, 20, 20, 12))
+    s.radius_custom = kw.get("radius_custom", (30, 26, 33, 20, 20, 20, 12, 9999))
     s.blur = kw.get("blur", True)
     s.glass_mode = kw.get("glass_mode", "frosted")
     s.transparency = kw.get("transparency", "0.90")
@@ -58,8 +58,10 @@ def state(**kw):
     s.block = list(kw.get("block", ["*chrome*", "*electron*"]))
     s.icons = kw.get("icons", "colloid")
     s.cursors = kw.get("cursors", "adwaita")
+    s.cursor_size = kw.get("cursor_size", 24)
     s.font = kw.get("font", "system")
     s.window_buttons = kw.get("window_buttons", "")
+    s.titlebutton_style = kw.get("titlebutton_style", "minimal")
     s.panel_blur_fix = kw.get("panel_blur_fix", True)
     s.update_check = kw.get("update_check", True)
     s.update_available = kw.get("update_available", None)
@@ -105,24 +107,24 @@ CASES = [
 
     # --radius-custom implies the custom preset, so it stands in for
     # --radius-preset rather than joining it.
-    ("seven radii of your own", FROSTED,
-     state(radius="custom", radius_custom=(20, 18, 22, 14, 14, 14, 8)),
-     ["--radius-custom", "20,18,22,14,14,14,8"]),
+    ("eight radii of your own", FROSTED,
+     state(radius="custom", radius_custom=(20, 18, 22, 14, 14, 14, 8, 6)),
+     ["--radius-custom", "20,18,22,14,14,14,8,6"]),
 
     # "custom" says nothing about which custom, so moving one surface has to go
     # out even though the preset name did not change.
     ("one surface moved inside custom",
-     state(radius="custom", radius_custom=(20, 18, 22, 14, 14, 14, 8)),
-     state(radius="custom", radius_custom=(20, 18, 22, 14, 14, 14, 12)),
-     ["--radius-custom", "20,18,22,14,14,14,12"]),
+     state(radius="custom", radius_custom=(20, 18, 22, 14, 14, 14, 8, 6)),
+     state(radius="custom", radius_custom=(20, 18, 22, 14, 14, 14, 12, 6)),
+     ["--radius-custom", "20,18,22,14,14,14,12,6"]),
 
     ("custom back to a named preset",
-     state(radius="custom", radius_custom=(20, 18, 22, 14, 14, 14, 8)),
+     state(radius="custom", radius_custom=(20, 18, 22, 14, 14, 14, 8, 6)),
      state(radius="rounded"), ["--radius-preset", "rounded"]),
 
-    ("the same seven values twice is not a change",
-     state(radius="custom", radius_custom=(20, 18, 22, 14, 14, 14, 8)),
-     state(radius="custom", radius_custom=(20, 18, 22, 14, 14, 14, 8)), []),
+    ("the same eight values twice is not a change",
+     state(radius="custom", radius_custom=(20, 18, 22, 14, 14, 14, 8, 6)),
+     state(radius="custom", radius_custom=(20, 18, 22, 14, 14, 14, 8, 6)), []),
 
     ("accent only", FROSTED, state(accent="teal"),
      ["--accent", "teal"]),
@@ -305,6 +307,18 @@ CASES = [
      state(window_buttons="all", accent="teal"),
      ["--accent", "teal", "--window-buttons", "all"]),
 
+    # Unlike window_buttons above, this always has a value — "minimal" is a
+    # real default rather than an unopinionated empty string — so, unlike the
+    # "back to leaving it alone sends nothing" case above, going back to
+    # minimal still sends a flag.
+    ("titlebar button style to material", FROSTED,
+     state(titlebutton_style="material"),
+     ["--titlebar-button-style", "material"]),
+
+    ("titlebar button style back to minimal",
+     state(titlebutton_style="material"), FROSTED,
+     ["--titlebar-button-style", "minimal"]),
+
     # The family goes out bare, so install.sh maps it to a colour Reversal
     # ships. Naming the colour here would need a second copy of that mapping —
     # and would reintroduce reversal-teal, which does not exist.
@@ -350,6 +364,14 @@ CASES = [
      ["--cursors", "mactahoe"]),
 
     ("keep the pointer", FROSTED, state(cursors="keep"), ["--no-cursors"]),
+
+    # Independent of the theme above — a different gsettings key, changeable
+    # with the pointer theme kept exactly as it is.
+    ("pointer size changed", FROSTED, state(cursor_size=20),
+     ["--cursor-size", "20"]),
+
+    ("pointer size untouched emits nothing",
+     state(cursor_size=20), state(cursor_size=20), []),
 
     # The interface font. One value and no "keep" beside it: going back is
     # --font system, which is one of the four rather than the absence of a flag.
@@ -420,6 +442,90 @@ def check_real_settings():
 
 
 check_real_settings()
+
+
+# blur_state and set_blur are what the Per-app blur page uses instead of the
+# old two-list toggle: one on/off per app, read and written the same way the
+# window-menu toggle's own _toggleBlur (extension.js) does. Both are pure
+# functions over the two lists apply_app_blur (lib/steps-dconf.sh) writes, so
+# this needs no disk and no repo — just the two functions agreeing with what
+# "on" means, and set_blur reporting the wildcards it had to move so the page
+# can ask before it moves them rather than after.
+def check_blur_state_model():
+    from aura_glass_settings import blur_state, set_blur
+
+    got = blur_state("org.gnome.Nautilus", ["org.gnome.Nautilus"], [], "gtk")
+    if got != (True, "exact", "org.gnome.Nautilus"):
+        failures.append("blur_state: exact allow match in gtk scope got %r"
+                        % (got,))
+
+    on, reason, _pattern = blur_state("org.gnome.Console", [], [], "gtk")
+    if (on, reason) != (False, "default"):
+        failures.append("blur_state: absent from allow in gtk scope got %r"
+                        % ((on, reason),))
+
+    got = blur_state("google-chrome", [], ["*chrome*"], "all")
+    if got != (False, "pattern", "*chrome*"):
+        failures.append("blur_state: block wildcard in all scope got %r"
+                        % (got,))
+
+    on, reason, _pattern = blur_state("org.gnome.Console", [], [], "all")
+    if (on, reason) != (True, "default"):
+        failures.append("blur_state: absent from block in all scope got %r"
+                        % ((on, reason),))
+
+    on, _reason, _pattern = blur_state(
+        "org.gnome.Nautilus", ["org.gnome.Nautilus"], [], "none")
+    if on is not False:
+        failures.append("blur_state: scope 'none' must always be off, even "
+                        "for a class the allow list names outright")
+
+    # A bare class, turned on from nothing: appended to allow, block
+    # untouched, nothing widened — there was nothing to warn about.
+    allow, block = [], []
+    widened = set_blur("org.gnome.Nautilus", True, allow, block)
+    if (allow, block, widened) != (["org.gnome.Nautilus"], [], []):
+        failures.append("set_blur: turning on a bare class got allow=%s "
+                        "block=%s widened=%s" % (allow, block, widened))
+
+    # Turning it on again does not duplicate it.
+    widened = set_blur("org.gnome.Nautilus", True, allow, block)
+    if (allow, block, widened) != (["org.gnome.Nautilus"], [], []):
+        failures.append("set_blur: turning on an already-on class duplicated "
+                        "it: allow=%s" % allow)
+
+    # Turning it off moves it to block rather than only clearing allow — the
+    # choice has to survive a later flip of the default (gtk<->all), which a
+    # bare removal could not do.
+    widened = set_blur("org.gnome.Nautilus", False, allow, block)
+    if (allow, block, widened) != ([], ["org.gnome.Nautilus"], []):
+        failures.append("set_blur: turning off a bare class got allow=%s "
+                        "block=%s widened=%s" % (allow, block, widened))
+
+    # An app on only through a wildcard: turning it off removes the wildcard
+    # (the class itself was never in the list) and reports it — the wildcard
+    # covered other apps too, and they just lost their blur along with it.
+    allow, block = ["*nautilus*", "gedit"], []
+    widened = set_blur("org.gnome.Nautilus", False, allow, block)
+    if (allow, block, widened) != (["gedit"], ["org.gnome.Nautilus"],
+                                   ["*nautilus*"]):
+        failures.append(
+            "set_blur: turning off a class covered by a wildcard got "
+            "allow=%s block=%s widened=%s (want allow=['gedit'] "
+            "block=['org.gnome.Nautilus'] widened=['*nautilus*'])"
+            % (allow, block, widened))
+
+    # The same app, already on via that wildcard: turning it on again is a
+    # no-op — allow already covers it, block never did — so nothing widens.
+    allow, block = ["*nautilus*"], []
+    widened = set_blur("org.gnome.Nautilus", True, allow, block)
+    if (allow, block, widened) != (["*nautilus*"], [], []):
+        failures.append(
+            "set_blur: turning on a class already covered by a wildcard "
+            "got allow=%s block=%s widened=%s" % (allow, block, widened))
+
+
+check_blur_state_model()
 
 for label, base, target, want in CASES:
     got = target.flags_against(base)

@@ -366,6 +366,9 @@ GTK4_SNIPPETS=(
     "$DIR/gtk4-60-controls.css"
     "$DIR/gtk4-70-surfaces.css"
     "$DIR/gtk4-transparency.css"
+    "$DIR/gtk4-window-controls-adwaita.css"
+    "$DIR/gtk4-window-controls-material.css"
+    "$DIR/gtk4-window-controls-flat.css"
 )
 
 # The three theme-generated targets are flattened. Re-running is safe: a value
@@ -378,7 +381,10 @@ apply "$GTK4_DARK_CSS" 1 "${GTK4_SNIPPETS[@]}"
 # CSS loads at GTK_STYLE_PROVIDER_PRIORITY_USER, above the theme. Flattening is
 # off for a second reason too: unlike the other three this file is not
 # theme-generated, so anything already in it is the user's own and stays as is.
-apply "$GTK3_CSS"      0 "$DIR/gtk3-tweaks.css"
+apply "$GTK3_CSS"      0 "$DIR/gtk3-tweaks.css" \
+                         "$DIR/gtk3-window-controls-adwaita.css" \
+                         "$DIR/gtk3-window-controls-material.css" \
+                         "$DIR/gtk3-window-controls-flat.css"
 
 # The User Themes extension reloads on a settings change, not on a file change,
 # so toggle the key to force Main.loadTheme().

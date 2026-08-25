@@ -103,12 +103,13 @@ install_bms() {
        && [ -f "$EXT_DIR/$BMS_UUID/components/popup/index.js" ] \
        && [ "$(cat "$CONF_DIR/bms-ref" 2>/dev/null || true)" = "$BMS_REF" ] \
        && patch_stamp_current bms-overview-patch "$REPO_ROOT/patches/$BMS_PATCH" \
+       && patch_stamp_current bms-subwindow-patch "$REPO_ROOT/patches/$BMS_SUBWIN_PATCH" \
        && ext_supports_shell "$EXT_DIR/$BMS_UUID" "$GNOME_MAJOR"; then
         skip "$BMS_UUID already built from $BMS_REF"
         return 0
     fi
 
-    info "no release carries the popup component — building from $BMS_REF + patches/$BMS_PATCH"
+    info "no release carries the popup component — building from $BMS_REF + patches/$BMS_PATCH + patches/$BMS_SUBWIN_PATCH"
     local src="$SRC_CACHE/blur-my-shell"
     if [ -d "$src/.git" ]; then
         run git -C "$src" checkout --quiet -- . 2>/dev/null || true
@@ -118,12 +119,19 @@ install_bms() {
     # Upstream's `blur-on-overview: false` leaves the blur actor in the window,
     # and the overview clones it into every window preview, where it shows a
     # frozen picture of the desktop that changes when the preview is hovered.
-    # The patch makes the setting mean what it says. The checkout above is reset
-    # by the `git checkout -- .` that precedes it, so this always applies to a
-    # clean tree.
+    # The overview patch makes the setting mean what it says. The subwindow
+    # patch makes check_blur match a window's whole transient-for chain and
+    # its GTK application id, not just its own wm_class, and adds ATTACHED and
+    # UTILITY to the frame types it accepts — without it a blurred app's own
+    # dialogs and tool palettes stay unblurred. Order matters: the second
+    # patch's hunks are offset against the first's output. The checkout above
+    # is reset by the `git checkout -- .` that precedes it, so this always
+    # applies to a clean tree.
     if [ "${DRY_RUN:-0}" != 1 ]; then
         git -C "$src" apply --whitespace=nowarn "$REPO_ROOT/patches/$BMS_PATCH" \
             || die "the Blur My Shell overview patch did not apply — upstream may have moved"
+        git -C "$src" apply --whitespace=nowarn "$REPO_ROOT/patches/$BMS_SUBWIN_PATCH" \
+            || die "the Blur My Shell subwindow patch did not apply — upstream may have moved"
     fi
 
     local podir=(--podir=../po)
@@ -133,7 +141,7 @@ install_bms() {
     fi
 
     if [ "${DRY_RUN:-0}" = 1 ]; then
-        info "dry-run: apply patches/$BMS_PATCH, gnome-extensions pack in $src/src, then install the zip"
+        info "dry-run: apply patches/$BMS_PATCH and patches/$BMS_SUBWIN_PATCH, gnome-extensions pack in $src/src, then install the zip"
         return 0
     fi
 
@@ -186,7 +194,41 @@ install_bms() {
     printf '%s\n' "$BMS_REF" > "$CONF_DIR/bms-ref"
     printf 'git\n' > "$CONF_DIR/bms-source"
     patch_stamp_write bms-overview-patch "$REPO_ROOT/patches/$BMS_PATCH"
-    ok "$BMS_UUID (built from $BMS_REF, with the popup component and the overview patch)"
+    patch_stamp_write bms-subwindow-patch "$REPO_ROOT/patches/$BMS_SUBWIN_PATCH"
+    ok "$BMS_UUID (built from $BMS_REF, with the popup component, the overview patch, and the subwindow patch)"
+}
+
+# aura-glass-blur@aura-glass.local — "Blur This App" in the window right-click
+# menu, editing the same Blur My Shell allow/block lists apply_app_blur does.
+# First-party, so this is a straight copy from extensions/ rather than a git
+# clone — there is no upstream to pin. It ships no gsettings schema of its
+# own, so there is nothing here to compile.
+#
+# Skipped along with Blur My Shell itself: the extension already adds nothing
+# to the menu when BMS's schema is not there (see _openBmsApplicationsSettings
+# in its own source), so installing it under --no-blur would only be dead
+# weight enabled for no reason.
+install_aura_ext() {
+    local uuid="$AURA_EXT_UUID"
+
+    if [ "${WANT_WINDOW_MENU:-1}" != 1 ]; then
+        skip "$uuid not installed (--no-window-menu)"
+        return 0
+    fi
+    if [ "${WANT_BLUR:-1}" != 1 ]; then
+        skip "$uuid left out (--no-blur) — nothing for it to toggle"
+        return 0
+    fi
+
+    if [ "${DRY_RUN:-0}" = 1 ]; then
+        info "dry-run: copy extensions/$uuid to $EXT_DIR/$uuid"
+        return 0
+    fi
+
+    rm -rf "$EXT_DIR/$uuid"
+    mkdir -p "$EXT_DIR"
+    cp -a "$REPO_ROOT/extensions/$uuid" "$EXT_DIR/$uuid"
+    ok "$uuid"
 }
 
 # Open Bar is the one extension with no GNOME 50 release. Upstream's last
@@ -315,6 +357,12 @@ install_rounded_blur() {
     for h in paru yay; do have "$h" && { helper="$h"; break; }; done
 
     if [ -z "$helper" ] && ! have meson; then
+        if ensure_aur_helper; then
+            for h in paru yay; do have "$h" && { helper="$h"; break; }; done
+        fi
+    fi
+
+    if [ -z "$helper" ] && ! have meson; then
         warn "neither an AUR helper (paru/yay) nor meson is installed."
         warn "Popup blur still works and its corners are still round — it just"
         warn "samples the wallpaper instead of the window behind it."
@@ -398,6 +446,7 @@ install_extensions() {
     else
         skip "$BMS_UUID left out (--no-blur)"
     fi
+    install_aura_ext
     install_openbar
     install_custom_osd
 
@@ -415,6 +464,7 @@ enable_extensions() {
     local want=("${EXT_CORE[@]}" openbar@neuromorph) u
     if [ "${WANT_BLUR:-1}" = 1 ]; then
         want+=("$BMS_UUID")
+        [ "${WANT_WINDOW_MENU:-1}" = 1 ] && want+=("$AURA_EXT_UUID")
     fi
     [ "${WANT_OSD:-1}" = 1 ] && want+=(custom-osd@neuromorph)
     if [ "${WANT_EXTRAS:-0}" = 1 ] && [ "${#EXT_EXTRA[@]}" -gt 0 ]; then

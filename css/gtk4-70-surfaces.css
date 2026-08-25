@@ -208,6 +208,39 @@ window,
 window.background,
 window.csd {
   border-radius: 30px;
+  padding: 0;
+}
+
+window.maximized,
+.maximized window,
+window:fullscreen,
+window.fullscreen {
+  padding: 0;
+}
+
+/* ---------- Video players and media viewports ----------
+ * Video players (Showtime, Totem, Clapper, Celluloid, etc.) embed media in
+ * GtkPicture, GtkVideo, or GtkGraphicsOffload widgets. Upstream Tahoe-Dark added
+ * `padding: 10px` to `window`, creating a 10px frame/border around video playback.
+ * Theme blanket rules like `* { border-radius: 20px }` and `stack.drop-widget { border-radius: 30px }`
+ * also clipped video viewports.
+ *
+ * Resetting window padding to 0 and ensuring video containers paint flush to the
+ * edges with no borders, shadows, or padding eliminates the border around video playback.
+ */
+picture,
+video,
+graphicsoffload,
+.drop-widget,
+#video-page,
+clapper-video,
+clapper-lead-container,
+clapper-canvas {
+  border: none;
+  box-shadow: none;
+  outline: none;
+  padding: 0;
+  margin: 0;
 }
 
 /* ---------- Server-side decoration frames (XWayland, Chrome, Electron) ----------

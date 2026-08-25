@@ -3,10 +3,22 @@
  * bars fell back to libadwaita's flat treatment and read as plain text labels.
  * Anything carrying a label now gets a real surface. Icon-only buttons and
  * window controls are deliberately left alone so toolbars stay quiet.
+ *
+ * suggested-action and destructive-action are here too, bare, alongside
+ * text-button/flat.text-button/pill: a button built from a custom child
+ * widget rather than the `label=` constructor argument — Apply is one — never
+ * picks up GTK4's automatic text-button class, so without this it would keep
+ * the theme's own blanket 9999px forever and never move with a radius preset.
+ * Their own background and colour stay exactly what the accent block below
+ * already gives them — this only adds the sizing and the radius, and the
+ * later block wins the properties both set because it is later in the file at
+ * the same specificity.
  */
 button.text-button,
 button.flat.text-button,
-button.pill {
+button.pill,
+button.suggested-action,
+button.destructive-action {
   min-height: 32px;
   padding: 4px 16px;
   border-radius: 9999px;

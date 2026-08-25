@@ -45,6 +45,22 @@
   box-shadow: none;
 }
 
+/* ---------- Window reset ----------
+ * Upstream Tahoe-Dark set `padding: 10px` on `window`, `.maximized window`,
+ * and `window.maximized`. In GTK4, this insets all window contents by 10px,
+ * creating an unwanted border around video players and window edges.
+ * Reset window padding to 0 everywhere.
+ */
+window,
+window.background,
+window.csd,
+window.maximized,
+.maximized window,
+window:fullscreen,
+window.fullscreen {
+  padding: 0;
+}
+
 /* libadwaita draws the sidebar and popover inward shadows and hairlines from
  * named colours rather than from any rule, so they cannot be turned off by
  * overriding a selector — the names have to be redefined. Appended after the

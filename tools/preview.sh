@@ -15,6 +15,7 @@
 #   tools/preview.sh --solid         render --no-blur mode instead of the glass one
 #   tools/preview.sh --transparency 0.85   translucent app windows at that level
 #   tools/preview.sh --tint 70             how much theme colour survives, vs black
+#   tools/preview.sh --style adwaita       titlebar buttons in an alternate style
 #
 # Every run is compared against the last accepted run of the same mode, and
 # reports what moved. tools/check-shots.py --accept adopts the current run as
@@ -74,6 +75,7 @@ GPU=0
 SOLID=0
 TRANSPARENCY=""
 TINT=""
+STYLE="minimal"
 GTK_APP="nautilus"
 
 while [ $# -gt 0 ]; do
@@ -84,8 +86,9 @@ while [ $# -gt 0 ]; do
         --solid)    SOLID=1; shift ;;
         --transparency) TRANSPARENCY="$2"; shift 2 ;;
         --tint)     TINT="$2"; shift 2 ;;
+        --style)    STYLE="$2"; shift 2 ;;
         --res)      RESOLUTION="$2"; shift 2 ;;
-        -h|--help)  sed -n '2,34p' "$0" | sed 's/^# \?//'; exit 0 ;;
+        -h|--help)  sed -n '2,35p' "$0" | sed 's/^# \?//'; exit 0 ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
     esac
 done
@@ -152,6 +155,19 @@ STRIP
     else
         cp "$REPO_ROOT/css/shell-popup-blur.css" "$conf/"
     fi
+
+    # Mirrors install_window_control_style: at most one style sheet, "minimal"
+    # being the base sheets' own look and needing nothing on top.
+    case "$STYLE" in
+        adwaita)  cp "$REPO_ROOT/css/gtk4-window-controls-adwaita.css" \
+                     "$REPO_ROOT/css/gtk3-window-controls-adwaita.css" "$conf/" ;;
+        material) cp "$REPO_ROOT/css/gtk4-window-controls-material.css" \
+                     "$REPO_ROOT/css/gtk3-window-controls-material.css" "$conf/" ;;
+        flat)     cp "$REPO_ROOT/css/gtk4-window-controls-flat.css" \
+                     "$REPO_ROOT/css/gtk3-window-controls-flat.css" "$conf/" ;;
+        minimal) ;;
+        *) die "unknown --style '$STYLE' — pick minimal, adwaita, material or flat" ;;
+    esac
 
     # The same sheet and the same rescale the installer applies, so what gets
     # rendered is what --app-transparency N would actually produce.

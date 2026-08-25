@@ -57,7 +57,9 @@ load_dconf() {
     sync_osd_profile
 }
 
-# The seven corner radii Blur My Shell rounds its blur actors at. dconf/core.ini
+# The seven of the eight corner radii that Blur My Shell rounds its blur
+# actors at — TOKEN_RADIUS_BUTTON has no blur actor behind it and is skipped
+# here, only ever painted by apply_radius_css. dconf/core.ini
 # ships them at the `default` row of radius_preset_values in tokens/tokens.sh,
 # and dconf load has just written that row — so like every other apply_* here,
 # this runs afterwards to put a flag's or a remembered choice's value back over
@@ -91,7 +93,75 @@ apply_radius_dconf() {
     run dconf write "$base/popup/dialog-corner-radius" "$TOKEN_RADIUS_DIALOG"
     run dconf write "$base/popup/corner-radius" "$TOKEN_RADIUS_POPUP"
     run dconf write "$base/popup/osd-corner-radius" "$TOKEN_RADIUS_OSD"
+    apply_pipeline_radius
     ok "blur corner radii follow the '${RADIUS_PRESET:-default}' preset"
+}
+
+# The window corner again, in the other place Blur My Shell keeps it.
+#
+# [applications] names a pipeline, and that pipeline carries a `corner` effect
+# with a radius of its own — so the blur behind an app window is rounded twice
+# over, by corner-radius above and by the effect here. Only the first moved with
+# a preset, which left a `soft` desktop rounding one at 16 and the other at 30:
+# the two-stacked-surfaces fault tokens/tokens.sh exists to prevent, inside a
+# single component.
+#
+# Every pipeline lives in one GVariant blob under `pipelines`, so this is a
+# read-modify-write of one number inside it rather than a key to set. The
+# pattern comes from tools/token_manifest.py — the same list
+# tools/check-tokens.sh asserts dconf/core.ini against — so the shipped value
+# and the value moved here cannot drift apart. It matches by pipeline name: the
+# id beside it is generated per machine and is not a thing to hard-code.
+#
+# The other three corner effects are left alone deliberately. `panel` and `dock`
+# round surfaces that are not among the eight a preset covers, and
+# `default rounded` is named by no component at all.
+#
+# Runs after apply_blur_strength, which rewrites the same key. That one only
+# ever touches `unscaled_radius`, so the two do not fight over a value — but it
+# also resets the whole blob from the shipped literal in bin/aura-glass-preview,
+# so the order is fixed rather than incidental.
+apply_pipeline_radius() {
+    if [ "${DRY_RUN:-0}" = 1 ]; then
+        info "dry-run: round the windows blur pipeline at $TOKEN_RADIUS_WINDOW"
+        return 0
+    fi
+    python3 - "$REPO_ROOT" "$TOKEN_RADIUS_WINDOW" <<'PIPELINE_PY' || { warn "could not round the windows blur pipeline"; return 0; }
+import os
+import re
+import subprocess
+import sys
+
+root, want = sys.argv[1], sys.argv[2]
+sys.path.insert(0, os.path.join(root, "tools"))
+from token_manifest import raw_entries
+
+KEY = "/org/gnome/shell/extensions/blur-my-shell/pipelines"
+cur = subprocess.run(["dconf", "read", KEY],
+                     capture_output=True, text=True).stdout.strip()
+if not cur:
+    sys.exit(0)
+
+new = cur
+for _token, _kind, _rel, pattern in raw_entries({"TOKEN_RADIUS_WINDOW"}):
+    matches = list(re.finditer(pattern, new, re.M))
+    if not matches:
+        # Blur My Shell renamed the pipeline, or this machine never had it.
+        # Said out loud rather than passed over: the painted corner has already
+        # moved by the time this runs, so a silent miss here is exactly the
+        # mismatch this function exists to close.
+        print("no `windows` pipeline in %s — its blur corner stays where it is"
+              % KEY, file=sys.stderr)
+        continue
+    # From the end, so an earlier replacement cannot move a later span.
+    for m in reversed(matches):
+        for i in range(1, (m.lastindex or 0) + 1):
+            start, end = m.span(i)
+            new = new[:start] + want + new[end:]
+
+if new != cur:
+    subprocess.run(["dconf", "write", KEY, new], check=True)
+PIPELINE_PY
 }
 
 # [applications] opacity controls the compositor-level window actor opacity for
@@ -112,7 +182,7 @@ apply_app_opacity() {
         opacity="${opacity:-255}"
     fi
 
-    if [ "${DRY_RUN:-0}" != 1 ]; then
+    if remembering; then
         mkdir -p "$CONF_DIR"
         printf '%s\n' "$opacity" > "$memo"
     fi
@@ -329,7 +399,7 @@ apply_app_blur() {
         scope="${scope:-gtk}"
     fi
 
-    if [ "${DRY_RUN:-0}" != 1 ]; then
+    if remembering; then
         mkdir -p "$CONF_DIR"
         printf '%s\n' "$want" > "$memo"
         printf '%s\n' "$scope" > "$scope_memo"
@@ -360,11 +430,12 @@ apply_app_blur() {
     allow="$(printf '%s\n' "$allow_lines" | app_blur_literal)"
     block="$(printf '%s\n' "$block_lines" | app_blur_literal)"
 
-    # Written back every run, not only when a flag supplied them, so the memo is
-    # always what is installed. The settings window reads these files to show the
-    # lists, and a missing memo would have it show an empty list for a dconf key
-    # that is not empty at all.
-    if [ "${DRY_RUN:-0}" != 1 ]; then
+    # Written back every real run, not only when a flag supplied them, so the
+    # memo is always what is installed. The settings window reads these files to
+    # show the lists, and a missing memo would have it show an empty list for a
+    # dconf key that is not empty at all. A preview is not a real run and writes
+    # neither — see remembering() in lib/common.sh.
+    if remembering; then
         mkdir -p "$CONF_DIR"
         printf '%s\n' "$allow_lines" > "$allow_memo"
         printf '%s\n' "$block_lines" > "$block_memo"
@@ -410,7 +481,7 @@ apply_popup_blur() {
         want="${want:-1}"
     fi
 
-    if [ "${DRY_RUN:-0}" != 1 ]; then
+    if remembering; then
         mkdir -p "$CONF_DIR"
         printf '%s\n' "$want" > "$memo"
     fi
@@ -569,7 +640,7 @@ apply_blur_strength() {
     # Nothing to do at the tuned values, and saying so is better than writing
     # six keys back to what dconf load just wrote.
     if [ "$want" = 100 ]; then
-        if [ "${DRY_RUN:-0}" != 1 ]; then
+        if remembering; then
             mkdir -p "$CONF_DIR"
             printf '%s\n' "$want" > "$memo"
         fi
@@ -656,6 +727,28 @@ apply_window_buttons() {
     esac
 
     run gsettings set org.gnome.desktop.wm.preferences button-layout "$layout"
+    if [ "${DRY_RUN:-0}" != 1 ]; then
+        mkdir -p "$CONF_DIR"
+        printf '%s\n' "$want" > "$memo"
+    fi
+}
+
+# Same shape as apply_window_buttons and for the same reason: cursor-size is
+# a GNOME preference shared with Tweaks, not this project's styling, so a
+# flagless install leaves it exactly where it found it.
+apply_cursor_size() {
+    local want="${CURSOR_SIZE:-}" memo="$CONF_DIR/cursor-size"
+    if [ -z "$want" ] && [ -f "$memo" ]; then
+        want="$(cat "$memo" 2>/dev/null || true)"
+    fi
+    [ -n "$want" ] || return 0
+
+    case "$want" in
+        ''|*[!0-9]*) warn "unknown cursor size '$want' — leaving it alone"
+                     return 0 ;;
+    esac
+
+    run gsettings set org.gnome.desktop.interface cursor-size "$want"
     if [ "${DRY_RUN:-0}" != 1 ]; then
         mkdir -p "$CONF_DIR"
         printf '%s\n' "$want" > "$memo"
@@ -765,6 +858,7 @@ apply_gsettings() {
     # Here rather than in load_dconf: it is a gsettings key like the four above,
     # and this is the step that runs in the --settings-only path with them.
     apply_window_buttons
+    apply_cursor_size
     apply_font
 
     # "left alone" rather than a name, because there is no name to give: the

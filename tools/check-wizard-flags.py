@@ -58,6 +58,18 @@ wiz.CONF_DIR = _EMPTY.name
 RECOMMENDED = ["just-perfection-desktop@just-perfection",
                "gnome-ui-tune@itstime.tech"]
 
+# A small stand-in catalogue for Answers.best, covering all three tiers so the
+# case below can assert core is excluded and the other two are not.
+BEST_CATALOGUE = [
+    {"uuid": "user-theme@gnome-shell-extensions.gcampax.github.com",
+     "tier": "core"},
+    {"uuid": "just-perfection-desktop@just-perfection",
+     "tier": "recommended"},
+    {"uuid": "Vitals@CoreCoding.com", "tier": "full"},
+]
+BEST_EXTENSIONS = ["just-perfection-desktop@just-perfection",
+                   "Vitals@CoreCoding.com"]
+
 
 def answers(**kw):
     """An Answers with fields overridden, and no disk behind it."""
@@ -75,8 +87,10 @@ BASE = ["--accent", "purple", "--font", "system"]
 FROSTED = ["--gtk-apps-blur", "--app-transparency", "0.90", "--popup-blur"]
 # The wizard's recommended pair, which is not install.sh's flagless default —
 # the wizard states its answer on every run rather than leaving the packs to the
-# installer, so these are the two names the defaults case has to send.
-PACKS = ["--icons", "reversal", "--cursors", "aosp", "--osd"]
+# installer, so these are the two names the defaults case has to send. The size
+# is a third, independent answer — the wizard's own 20px recommendation.
+PACKS = ["--icons", "reversal", "--cursors", "aosp", "--cursor-size", "20",
+         "--osd"]
 
 # (description, the answers, whether there is a GDM, expected argv)
 CASES = [
@@ -108,7 +122,8 @@ CASES = [
      BASE + ["--no-blur"] + PACKS),
 
     ("solid keeps its own packs", answers(blur=False, want_icons=False), False,
-     BASE + ["--no-blur", "--no-icons", "--cursors", "aosp", "--osd"]),
+     BASE + ["--no-blur", "--no-icons", "--cursors", "aosp", "--cursor-size",
+             "20", "--osd"]),
 
     ("every window blurred", answers(scope="all"), False,
      BASE + ["--all-apps-blur", "--app-transparency", "0.90", "--popup-blur"]
@@ -131,14 +146,27 @@ CASES = [
 
     ("hatter icons and mactahoe pointers",
      answers(icons="hatter", cursors="mactahoe"), False,
-     BASE + FROSTED + ["--icons", "hatter", "--cursors", "mactahoe", "--osd"]),
+     BASE + FROSTED + ["--icons", "hatter", "--cursors", "mactahoe",
+                       "--cursor-size", "20", "--osd"]),
 
     ("keep both packs", answers(want_icons=False, want_cursors=False), False,
-     BASE + FROSTED + ["--no-icons", "--no-cursors", "--osd"]),
+     BASE + FROSTED + ["--no-icons", "--no-cursors", "--cursor-size", "20",
+                       "--osd"]),
+
+    # Independent of the pack above: keeping the pointer theme is not a
+    # statement about its size, and the reverse holds too.
+    ("keep the pointer size, theme untouched",
+     answers(cursor_size="24", want_cursor_size=False), False,
+     BASE + FROSTED + ["--icons", "reversal", "--cursors", "aosp", "--osd"]),
+
+    ("a larger pointer, theme unchanged",
+     answers(cursor_size="32"), False,
+     BASE + FROSTED + ["--icons", "reversal", "--cursors", "aosp",
+                       "--cursor-size", "32", "--osd"]),
 
     ("stock OSD", answers(want_osd=False), False,
      BASE + FROSTED + ["--icons", "reversal", "--cursors", "aosp",
-                       "--no-osd"]),
+                       "--cursor-size", "20", "--no-osd"]),
 
     # A catalogue that could not be read leaves this None, which sends no
     # --extensions at all and leaves install.sh on its own recommended pack.
@@ -157,6 +185,25 @@ CASES = [
     ("the login screen, themed",
      answers(gdm=True, gdm_monitors=True), True,
      BASE + FROSTED + PACKS + ["--gdm", "--gdm-monitors"]),
+
+    # Answers.best, the welcome page's "Best experience" button. Extensions
+    # come from the catalogue (core excluded — install.sh installs that
+    # regardless of --extensions) rather than from the answers() helper's
+    # __init__ defaults, so these three go straight to to_argv.
+    ("best, no login manager",
+     wiz.Answers.best(BEST_CATALOGUE, False, False), False,
+     BASE + FROSTED + PACKS + ["--extensions", ",".join(BEST_EXTENSIONS)]),
+
+    ("best, with a login manager, one display",
+     wiz.Answers.best(BEST_CATALOGUE, True, False), True,
+     BASE + FROSTED + PACKS
+     + ["--extensions", ",".join(BEST_EXTENSIONS), "--gdm",
+        "--no-gdm-monitors"]),
+
+    ("best, with a login manager, several displays",
+     wiz.Answers.best(BEST_CATALOGUE, True, True), True,
+     BASE + FROSTED + PACKS
+     + ["--extensions", ",".join(BEST_EXTENSIONS), "--gdm", "--gdm-monitors"]),
 ]
 
 for label, state, gdm, want in CASES:

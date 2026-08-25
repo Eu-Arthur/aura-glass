@@ -203,6 +203,7 @@ step "Resetting theme settings"
 run gsettings reset org.gnome.desktop.interface gtk-theme
 run gsettings reset org.gnome.desktop.interface icon-theme
 run gsettings reset org.gnome.desktop.interface cursor-theme
+run gsettings reset org.gnome.desktop.interface cursor-size
 run gsettings reset org.gnome.desktop.interface accent-color
 # The three --font wrote. Reset rather than restored from the backup, unlike
 # --font system's own way back: this is the uninstaller, and GNOME's default is
@@ -255,6 +256,7 @@ if [ "$REMOVE_EXTENSIONS" = 1 ]; then
     # Only the ones installed under $HOME are touched: a distro-packaged copy
     # in /usr/share belongs to the system, not to us.
     for u in openbar@neuromorph custom-osd@neuromorph blur-my-shell@aunetx \
+             aura-glass-blur@aura-glass.local \
              just-perfection-desktop@just-perfection gnome-ui-tune@itstime.tech \
              space-bar@luchrioh auto-accent-colour@Wartybix \
              Vitals@CoreCoding.com clipboard-indicator@tudmotu.com \
@@ -387,6 +389,7 @@ run rm -f "$CONF_DIR/bms-ref" "$CONF_DIR/bms-source" \
           "$CONF_DIR/app-blur-allow" \
           "$CONF_DIR/app-blur-block" \
           "$CONF_DIR/cursor-pack" \
+          "$CONF_DIR/cursor-size" \
           "$CONF_DIR/openbar-patch" "$CONF_DIR/custom-osd-patch"
 if confirm "Delete $CONF_DIR (this also deletes the backups above)?" 0; then
     run rm -rf "$CONF_DIR"

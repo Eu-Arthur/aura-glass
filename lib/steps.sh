@@ -35,13 +35,32 @@ THEME_NAME="Aura-Glass"
 BMS_REPO="https://github.com/aunetx/blur-my-shell.git"
 BMS_REF="7d1290bbcff9"            # master; no release carries the popup component
 BMS_UUID="blur-my-shell@aunetx"
+
+# First-party — no upstream repo or ref, since the source lives in
+# extensions/ next to this script. See install_aura_ext in
+# lib/steps-extensions.sh.
+AURA_EXT_UUID="aura-glass-blur@aura-glass.local"
 # Applied on top of that pin: `blur-on-overview: false` does not take the blur
 # out of the overview's window previews upstream, it only stops forcing window
 # actors visible. See the patch's own comments.
 BMS_PATCH="blur-my-shell-overview.patch"
+# Applied after BMS_PATCH: upstream's check_blur matches only get_wm_class()
+# against one frame-type set that excludes ATTACHED (which is what an attached
+# modal dialog reports once org.gnome.mutter attach-modal-dialogs is true, the
+# GNOME default) and UTILITY. Together those left a blurred app's own dialogs
+# and tool palettes unblurred. See the patch's own comments.
+BMS_SUBWIN_PATCH="blur-my-shell-subwindows.patch"
 
 ROUNDEDBLUR_REPO="https://github.com/kancko/gnome-rounded-blur.git"
 ROUNDEDBLUR_REF="9c7efb7ac5de"    # v1.0.1
+
+# For ensure_aur_helper in lib/distro.sh. Unpinned, unlike everything else
+# here: an AUR PKGBUILD's checksums point at a specific upstream release
+# tarball, and those get pruned from GitHub releases over time — an old
+# PKGBUILD commit is a 404 waiting to happen, not stability. The -bin
+# packages, so bootstrapping a helper does not need a Rust or Go toolchain.
+PARU_AUR_REPO="https://aur.archlinux.org/paru-bin.git"
+YAY_AUR_REPO="https://aur.archlinux.org/yay-bin.git"
 
 OPENBAR_REPO="https://github.com/neuromorph/openbar.git"
 OPENBAR_REF="01fb24217e0c"       # last upstream commit; patched for GNOME 50
@@ -254,6 +273,7 @@ preflight() {
     # like the backup_once calls in install_theme.
     gsettings_backup_once org.gnome.desktop.interface icon-theme icon-theme
     gsettings_backup_once org.gnome.desktop.interface cursor-theme cursor-theme
+    gsettings_backup_once org.gnome.desktop.interface cursor-size cursor-size
 }
 
 # ------------------------------------------------------------------- theme --

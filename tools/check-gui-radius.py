@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Assert the settings window's radius numbers agree with tokens/tokens.sh.
 
-The window carries its own copy of the four preset rows and of the per-surface
+The window carries its own copy of the seven preset rows and of the per-surface
 bounds, because it has to know them before install.sh runs — the spin rows need
-their ranges at build time, and the preset buttons have to set seven values
+their ranges at build time, and the preset buttons have to set eight values
 without shelling out on every click.
 
 That is the same arrangement tokens.sh already defends for the stylesheets: the
@@ -61,12 +61,12 @@ def shell_values(snippet):
 
 problems = []
 
-# ---- the four preset rows ----
+# ---- the seven preset rows ----
 #
 # Asked of tokens.sh one preset at a time, in the same order the window stores
 # them, which is tools/token_manifest.py's RADIUS_TOKENS order.
 NAMES = ["WINDOW", "MENU", "QUICK_SETTINGS", "NOTIFICATION", "DIALOG", "POPUP",
-         "OSD"]
+         "OSD", "BUTTON"]
 
 for preset, gui_row in sorted(RADIUS_PRESET_VALUES.items()):
     shell = shell_values(
