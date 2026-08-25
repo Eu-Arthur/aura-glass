@@ -44,6 +44,12 @@ AURA_EXT_UUID="aura-glass-blur@aura-glass.local"
 # out of the overview's window previews upstream, it only stops forcing window
 # actors visible. See the patch's own comments.
 BMS_PATCH="blur-my-shell-overview.patch"
+# Applied after BMS_PATCH: upstream's check_blur matches only get_wm_class()
+# against one frame-type set that excludes ATTACHED (which is what an attached
+# modal dialog reports once org.gnome.mutter attach-modal-dialogs is true, the
+# GNOME default) and UTILITY. Together those left a blurred app's own dialogs
+# and tool palettes unblurred. See the patch's own comments.
+BMS_SUBWIN_PATCH="blur-my-shell-subwindows.patch"
 
 ROUNDEDBLUR_REPO="https://github.com/kancko/gnome-rounded-blur.git"
 ROUNDEDBLUR_REF="9c7efb7ac5de"    # v1.0.1
@@ -267,6 +273,7 @@ preflight() {
     # like the backup_once calls in install_theme.
     gsettings_backup_once org.gnome.desktop.interface icon-theme icon-theme
     gsettings_backup_once org.gnome.desktop.interface cursor-theme cursor-theme
+    gsettings_backup_once org.gnome.desktop.interface cursor-size cursor-size
 }
 
 # ------------------------------------------------------------------- theme --

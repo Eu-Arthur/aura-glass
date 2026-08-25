@@ -82,6 +82,8 @@ WANT_POPUP_BLUR=1
 POPUP_BLUR_EXPLICIT=""
 WINDOW_BUTTONS=""        # empty = leave the titlebar as the system has it
 WINDOW_BUTTONS_EXPLICIT=""
+TITLEBUTTON_STYLE=""     # empty = remembered choice, then minimal
+TITLEBUTTON_STYLE_EXPLICIT=""
 WANT_ROUNDED_BLUR=1
 APP_TRANSPARENCY=""   # empty = remembered choice, then off (e.g. 0.90 / 90%)
 APP_TRANSPARENCY_EXPLICIT=""
@@ -89,6 +91,8 @@ APP_OPACITY=""        # empty = remembered choice, then 255 (e.g. 230)
 APP_OPACITY_EXPLICIT=""
 CURSORS=""          # empty = remembered choice, then adwaita | mactahoe
 CURSORS_EXPLICIT=""
+CURSOR_SIZE=""      # empty = left alone, never written unless asked
+CURSOR_SIZE_EXPLICIT=""
 FONT=""             # empty = remembered choice, then system (Cantarell, untouched)
 FONT_EXPLICIT=""
 ICONS=""            # empty = remembered choice, then colloid
@@ -99,7 +103,7 @@ APP_TINT_COLOR=""   # empty = remembered choice, then black (#000000)
 SHELL_TINT_COLOR="" # empty = remembered choice, then black (#000000)
 RADIUS_PRESET=""       # empty = remembered choice, then default
 RADIUS_PRESET_EXPLICIT=""
-RADIUS_CUSTOM=""       # seven comma-separated pixel values, in RADIUS_TOKENS order
+RADIUS_CUSTOM=""       # eight comma-separated pixel values, in RADIUS_TOKENS order
 RADIUS_CUSTOM_EXPLICIT=""
 SETTINGS_ONLY=0
 DEPS_ONLY=0
@@ -166,10 +170,10 @@ ${C_BLD}aura-glass${C_OFF} — a fluid frosted-glass desktop for GNOME 48-50
                       notifications. One of: $RADIUS_PRESETS (default: default,
                       and remembered for later runs)
     --radius-custom LIST
-                      seven corner radii of your own, in pixels, comma separated:
-                      window,menu,quick-settings,notification,dialog,popup,osd
-                      (e.g. 30,26,33,20,20,20,12). Each is bounded by what the
-                      presets already cover. Overrides --radius-preset
+                      eight corner radii of your own, in pixels, comma separated:
+                      window,menu,quick-settings,notification,dialog,popup,osd,button
+                      (e.g. 30,26,33,20,20,20,12,9999). Each is bounded by what
+                      the presets already cover. Overrides --radius-preset
     --panel-blur-fix  agent that rebuilds Blur My Shell's panel blur on layout change
                       (default: on when this machine has more than one monitor)
     --no-panel-blur-fix skip the panel blur rebuild agent
@@ -182,6 +186,9 @@ ${C_BLD}aura-glass${C_OFF} — a fluid frosted-glass desktop for GNOME 48-50
                       Remembered for later runs
     --cursors WHICH   adwaita (default, ships with GNOME), aosp, mactahoe, or
                       original (whatever was set before aura-glass first ran here)
+    --cursor-size PX  pointer size in pixels, 16-128 (20 recommended for the
+                      packs above). Left alone unless given. Remembered for
+                      later runs
     --font WHICH      interface font: system (default, leaves GNOME's own font
                       alone), misans, inter or sf-pro. The three are downloaded
                       and installed into ~/.local/share/fonts if they are not
@@ -212,6 +219,11 @@ ${C_BLD}aura-glass${C_OFF} — a fluid frosted-glass desktop for GNOME 48-50
     --window-buttons WHICH
                       titlebar buttons: close (close alone) or all (minimize,
                       maximize and close). Left as the system has it unless given
+    --titlebar-button-style STYLE
+                      titlebar button look: minimal (default, no disc until
+                      hover), adwaita (always-visible neutral disc), material
+                      (solid discs, close filled red) or flat (glyph only, no
+                      disc ever). Remembered for later runs
     --window-blur     blur behind app windows (default: on behind GTK/GNOME apps)
     --gtk-apps-blur   blur behind GTK / GNOME applications only (Files, Settings, Terminal - default, low CPU)
     --all-apps-blur   blur behind all application windows (heavy on CPU/GPU)
@@ -295,6 +307,8 @@ parse_flags() {
         --no-panel-blur-fix) WANT_PANEL_BLUR_FIX=0; PANEL_BLUR_FIX_EXPLICIT=1; EXPLICIT_FLAGS=1; shift ;;
         --cursors)       CURSORS="${2:-}"; CURSORS_EXPLICIT=1; EXPLICIT_FLAGS=1; shift 2 ;;
         --cursors=*)     CURSORS="${1#*=}"; CURSORS_EXPLICIT=1; EXPLICIT_FLAGS=1; shift ;;
+        --cursor-size)   CURSOR_SIZE="${2:-}"; CURSOR_SIZE_EXPLICIT=1; EXPLICIT_FLAGS=1; shift 2 ;;
+        --cursor-size=*) CURSOR_SIZE="${1#*=}"; CURSOR_SIZE_EXPLICIT=1; EXPLICIT_FLAGS=1; shift ;;
         --font)          FONT="${2:-}"; FONT_EXPLICIT=1; EXPLICIT_FLAGS=1; shift 2 ;;
         --font=*)        FONT="${1#*=}"; FONT_EXPLICIT=1; EXPLICIT_FLAGS=1; shift ;;
         --icons)         ICONS="${2:-}"; ICONS_EXPLICIT=1; EXPLICIT_FLAGS=1; shift 2 ;;
@@ -355,6 +369,8 @@ parse_flags() {
                          EXPLICIT_FLAGS=1; shift ;;
         --window-buttons) WINDOW_BUTTONS="${2:-}"; WINDOW_BUTTONS_EXPLICIT=1; EXPLICIT_FLAGS=1; shift 2 ;;
         --window-buttons=*) WINDOW_BUTTONS="${1#*=}"; WINDOW_BUTTONS_EXPLICIT=1; EXPLICIT_FLAGS=1; shift ;;
+        --titlebar-button-style) TITLEBUTTON_STYLE="${2:-}"; TITLEBUTTON_STYLE_EXPLICIT=1; EXPLICIT_FLAGS=1; shift 2 ;;
+        --titlebar-button-style=*) TITLEBUTTON_STYLE="${1#*=}"; TITLEBUTTON_STYLE_EXPLICIT=1; EXPLICIT_FLAGS=1; shift ;;
         --settings-only) SETTINGS_ONLY=1; WANT_DEPS=0; EXPLICIT_FLAGS=1; shift ;;
         --deps-only)     DEPS_ONLY=1; EXPLICIT_FLAGS=1; shift ;;
         --no-deps)       WANT_DEPS=0; EXPLICIT_FLAGS=1; shift ;;
@@ -417,6 +433,64 @@ ${C_BLD}└───────────────────────
 
 EOF
 
+    # 0. Quick Start
+    #
+    #   ┌─ PARITY ────────────────────────────────────────────────────────────┐
+    #   │ This choice's twin is the "Best experience" / "Customize" pair on    │
+    #   │ the GUI wizard's welcome page (gui/aura_glass_setup_wizard.py,       │
+    #   │ page_welcome and Answers.best). Both mean: the recommended look,     │
+    #   │ every extension, and the login screen themed with monitor sync where │
+    #   │ it would fix something. A change to what "best" means belongs in     │
+    #   │ both places.                                                         │
+    #   └───────────────────────────────────────────────────────────────────────┘
+    printf '%sStep 0: Quick Start%s\n' "$C_BLD" "$C_OFF"
+    printf '  %s[1]%s Best experience %s[Default — recommended look, every extension, login screen themed]%s\n' "$C_BLD" "$C_OFF" "$C_DIM" "$C_OFF"
+    printf '  %s[2]%s Customize %s[Answer each question below]%s\n' "$C_BLD" "$C_OFF" "$C_DIM" "$C_OFF"
+    printf '  Choice [1-2, default 1]: '
+    read -r ans_quick || ans_quick="1"
+    case "$ans_quick" in
+        2|customize)
+            WANT_QUICK_START=0
+            printf '\n'
+            ;;
+        *)
+            WANT_QUICK_START=1
+            # The recommended pair, stated explicitly the way the GUI wizard's
+            # Answers() defaults do — install.sh's own flagless default is
+            # Colloid and Adwaita (ICONS/CURSORS below), which is a different,
+            # older answer than the one this project actually recommends now.
+            ICONS="reversal"
+            WANT_ICONS=1
+            CURSORS="aosp"
+            WANT_CURSORS=1
+            WANT_OSD=1
+            # Every extension: the same array --all-extras and the GUI
+            # wizard's "Everything" preset button both build.
+            WANT_EXTRAS=1
+            EXT_EXTRA=("${EXT_EXTRA_ALL[@]}")
+            gdm_note=""
+            if have gdm || have gdm3 || [ -e /usr/sbin/gdm3 ]; then
+                WANT_GDM=1
+                if multi_monitor_detected; then
+                    WANT_GDM_MONITORS=1
+                    gdm_note=", login screen themed with monitor sync"
+                else
+                    WANT_GDM_MONITORS=0
+                    gdm_note=", login screen themed"
+                fi
+            fi
+            # Blur mode, scope and transparency are left untouched here: the
+            # top-of-script defaults (WANT_BLUR=1, APP_BLUR_SCOPE=gtk) and the
+            # remembered-value resolution below (APP_TRANSPARENCY, further
+            # down this script) already land on frosted glass at 90% on a
+            # fresh install with nothing overriding them — which is the same
+            # answer Steps 1-2 below would collect by hand.
+            printf '  %s✓%s Best experience selected — recommended look, every extension%s\n\n' \
+                "$C_GRN" "$C_OFF" "$gdm_note"
+            ;;
+    esac
+
+    if [ "${WANT_QUICK_START:-0}" = 0 ]; then
     # 1. Accent Color
     printf '%sStep 1: Choose Accent Color%s\n' "$C_BLD" "$C_OFF"
     printf '  Current default / remembered: %s%s%s\n' "$C_GRN" "$ACCENT" "$C_OFF"
@@ -611,6 +685,35 @@ EOF
             ;;
     esac
 
+    # Independent of the theme choice above — a --no-cursors "leave my pointer
+    # alone" and a chosen size are not in conflict, since they are two
+    # different gsettings keys.
+    printf '  Cursor Size:\n'
+    printf '    %s[1]%s 20px %s[Recommended — the packs above read best here]%s\n' "$C_BLD" "$C_OFF" "$C_DIM" "$C_OFF"
+    printf '    %s[2]%s 24px %s[GNOME'"'"'s default]%s\n' "$C_BLD" "$C_OFF" "$C_DIM" "$C_OFF"
+    printf '    %s[3]%s 32px %s[Large]%s\n' "$C_BLD" "$C_OFF" "$C_DIM" "$C_OFF"
+    printf '    %s[4]%s Default %s[Your current size, left alone]%s\n' "$C_BLD" "$C_OFF" "$C_DIM" "$C_OFF"
+    printf '  Choice [1-4, default 1]: '
+    read -r ans_cursor_size || ans_cursor_size="1"
+    case "$ans_cursor_size" in
+        2|24)
+            CURSOR_SIZE="24"
+            printf '  %s✓%s 24px selected\n\n' "$C_GRN" "$C_OFF"
+            ;;
+        3|32)
+            CURSOR_SIZE="32"
+            printf '  %s✓%s 32px selected\n\n' "$C_GRN" "$C_OFF"
+            ;;
+        4|default|keep|none)
+            CURSOR_SIZE=""
+            printf '  %s✓%s Pointer size left alone — nothing here writes cursor-size\n\n' "$C_GRN" "$C_OFF"
+            ;;
+        *)
+            CURSOR_SIZE="20"
+            printf '  %s✓%s 20px selected\n\n' "$C_GRN" "$C_OFF"
+            ;;
+    esac
+
     # The twin of the setup window's font rows. Three fonts and the way out of
     # them; each of the three is downloaded here and now if it is not already
     # on the machine, which is why the sizes are on the screen.
@@ -726,6 +829,7 @@ EOF
                 ;;
         esac
     fi
+    fi
 
     # 7. Summary & Confirmation
     blur_desc="Frosted Glass"
@@ -740,6 +844,8 @@ EOF
     [[ "$ICONS" =~ ^reversal ]] && icon_desc="$ICONS"
     cursor_desc="$CURSORS"
     [ "$WANT_CURSORS" = 0 ] && cursor_desc="Default (left alone)"
+    cursor_size_desc="${CURSOR_SIZE}px"
+    [ -n "$CURSOR_SIZE" ] || cursor_size_desc="Default (left alone)"
     font_desc="$(font_family)"
     [ -n "$font_desc" ] || font_desc="System default (left alone)"
     osd_desc="Pill OSD"
@@ -769,6 +875,7 @@ ${C_BLD}================ Configuration Summary ================${C_OFF}
   ${C_BLD}App Translucency:${C_OFF}    $trans_desc
   ${C_BLD}Icon Theme:${C_OFF}          $icon_desc
   ${C_BLD}Cursor Theme:${C_OFF}        $cursor_desc
+  ${C_BLD}Cursor Size:${C_OFF}         $cursor_size_desc
   ${C_BLD}Interface Font:${C_OFF}      $font_desc
   ${C_BLD}Custom OSD:${C_OFF}          $osd_desc
   ${C_BLD}GDM Login Theme:${C_OFF}     $gdm_desc
@@ -823,6 +930,21 @@ case "$CURSORS" in
     adwaita|aosp|mactahoe|original) ;;
     *) die "unknown --cursors '$CURSORS' — pick adwaita, aosp, mactahoe or original" ;;
 esac
+
+# Independent of --cursors: the pointer theme and the pointer size are two
+# separate gsettings keys, and picking your own theme with --no-cursors does
+# not mean the size is not ours to set either. No memo read here — like
+# --window-buttons, resolution against the remembered choice happens at the
+# point of use in apply_cursor_size, so a run that dies before then never
+# overwrites the memo with a size that was never actually applied.
+if [ -n "$CURSOR_SIZE_EXPLICIT" ]; then
+    case "$CURSOR_SIZE" in
+        ''|*[!0-9]*) die "--cursor-size takes a whole number of pixels, got '$CURSOR_SIZE'" ;;
+    esac
+    if [ "$CURSOR_SIZE" -lt 16 ] || [ "$CURSOR_SIZE" -gt 128 ]; then
+        die "--cursor-size '$CURSOR_SIZE' is out of range — pick 16 to 128"
+    fi
+fi
 
 if [ -z "$ICONS" ] && [ -r "$CONF_DIR/icon-pack" ]; then
     ICONS="$(cat "$CONF_DIR/icon-pack" 2>/dev/null || true)"
@@ -895,7 +1017,16 @@ if [ -n "$WINDOW_BUTTONS_EXPLICIT" ]; then
     esac
 fi
 
-# Asking for seven values of your own is asking for the preset to be `custom`.
+# Same shape, same reason: validated here so a typo fails before the install
+# has written anything. install_window_control_style reads the memo itself.
+if [ -n "$TITLEBUTTON_STYLE_EXPLICIT" ]; then
+    case "$TITLEBUTTON_STYLE" in
+        minimal|adwaita|material|flat) ;;
+        *) die "unknown --titlebar-button-style '$TITLEBUTTON_STYLE' — pick minimal, adwaita, material or flat" ;;
+    esac
+fi
+
+# Asking for eight values of your own is asking for the preset to be `custom`.
 # One flag decides both so they cannot be remembered disagreeing with each other.
 [ -n "$RADIUS_CUSTOM_EXPLICIT" ] && { RADIUS_PRESET="custom"; RADIUS_PRESET_EXPLICIT=1; }
 
@@ -918,23 +1049,33 @@ fi
 RADIUS_PRESET="${RADIUS_PRESET:-default}"
 
 if [ "$RADIUS_PRESET" = custom ]; then
-    # The seven values, from the flag or from the memo the last one wrote.
+    # The eight values, from the flag or from the memo the last one wrote.
     if [ -z "$RADIUS_CUSTOM_EXPLICIT" ] && [ -r "$CONF_DIR/radius-custom" ]; then
         RADIUS_CUSTOM="$(cat "$CONF_DIR/radius-custom" 2>/dev/null || true)"
+        # A memo written before TOKEN_RADIUS_BUTTON existed holds seven
+        # fields. Filled in here rather than rejected: the button column did
+        # not exist when this memo was written, so a run that never asked for
+        # anything new should not start failing at `custom` because of it. A
+        # --radius-custom typed today still has to be eight, below — this
+        # only widens what an old memo is read as.
+        if [ -n "$RADIUS_CUSTOM" ] \
+                && [ "$(printf '%s' "$RADIUS_CUSTOM" | awk -F, '{print NF}')" = 7 ]; then
+            RADIUS_CUSTOM="$RADIUS_CUSTOM,9999"
+        fi
     fi
     [ -n "$RADIUS_CUSTOM" ] \
-        || die "--radius-preset custom needs seven values — pass --radius-custom"
+        || die "--radius-preset custom needs eight values — pass --radius-custom"
 
     # Bounded per surface rather than free. The ranges are the ones the curated
     # presets already cover, except the OSD's ceiling, which is lower than
     # arithmetic would suggest and is documented at TOKEN_RADIUS_OSD.
     radius_bounds
-    _rc_names="WINDOW MENU QUICK_SETTINGS NOTIFICATION DIALOG POPUP OSD"
+    _rc_names="WINDOW MENU QUICK_SETTINGS NOTIFICATION DIALOG POPUP OSD BUTTON"
     _rc_i=1
     for _rc_name in $_rc_names; do
         _rc_val="$(printf '%s' "$RADIUS_CUSTOM" | cut -d, -f"$_rc_i")"
         case "$_rc_val" in
-            ''|*[!0-9]*) die "--radius-custom needs seven whole numbers of pixels, got '$RADIUS_CUSTOM'" ;;
+            ''|*[!0-9]*) die "--radius-custom needs eight whole numbers of pixels, got '$RADIUS_CUSTOM'" ;;
         esac
         eval "_rc_min=\$RADIUS_MIN_$_rc_name; _rc_max=\$RADIUS_MAX_$_rc_name"
         if [ "$_rc_val" -lt "$_rc_min" ] || [ "$_rc_val" -gt "$_rc_max" ]; then
@@ -943,11 +1084,11 @@ if [ "$RADIUS_PRESET" = custom ]; then
         eval "TOKEN_RADIUS_$_rc_name=\$_rc_val"
         _rc_i=$((_rc_i + 1))
     done
-    # An eighth field is a typo, not a value that happens not to be read.
-    [ -z "$(printf '%s' "$RADIUS_CUSTOM" | cut -d, -f8)" ] \
-        || die "--radius-custom takes seven values, got more"
+    # A ninth field is a typo, not a value that happens not to be read.
+    [ -z "$(printf '%s' "$RADIUS_CUSTOM" | cut -d, -f9)" ] \
+        || die "--radius-custom takes eight values, got more"
 else
-    # Sets the seven TOKEN_RADIUS_* values for this run, which is what
+    # Sets the eight TOKEN_RADIUS_* values for this run, which is what
     # apply_radius_css and apply_radius_dconf both read. Validated here rather
     # than at the point of use so a typo fails before anything has been written,
     # and rejected rather than defaulted: a --radius-preset that silently

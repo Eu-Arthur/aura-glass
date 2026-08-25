@@ -2,15 +2,17 @@
 """Rewrite the installed stylesheets to a different set of corner radii.
 
     apply-radius-preset.py CONF_DIR WINDOW MENU QUICK_SETTINGS \\
-                           NOTIFICATION DIALOG POPUP OSD
+                           NOTIFICATION DIALOG POPUP OSD BUTTON
 
-The seven values are positional, in tools/token_manifest.py's RADIUS_TOKENS
+The eight values are positional, in tools/token_manifest.py's RADIUS_TOKENS
 order — the same order tokens/tokens.sh's radius_preset_values() sets them in.
 OSD is accepted and ignored here: no stylesheet paints it, Custom OSD draws the
 pill and Blur My Shell rounds the blur, so it is applied as a dconf key by
-apply_radius_dconf() in lib/steps-dconf.sh. It stays in the argument list so
-that one preset is one argument vector everywhere rather than two shapes that
-have to be kept in step.
+apply_radius_dconf() in lib/steps-dconf.sh. BUTTON is the opposite case — it
+has a stylesheet site and no dconf key, buttons being nothing Blur My Shell
+rounds — so it is rewritten here and skipped there. Both stay in the argument
+list so that one preset is one argument vector everywhere rather than two
+shapes that have to be kept in step.
 
 CONF_DIR is ~/.config/aura-glass — the flat copies install_css puts there, never
 the repo. css/ and dconf/core.ini stay at the shipped `default` values so

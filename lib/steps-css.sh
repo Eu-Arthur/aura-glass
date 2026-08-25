@@ -141,8 +141,10 @@ apply_app_tint_color() {
             "$CONF_DIR/gtk4-transparency.css" "$want" | sed 's/^/    /' \
             || { warn "could not tint the app windows"; return 0; }
     fi
-    mkdir -p "$CONF_DIR"
-    printf '%s\n' "$want" > "$memo"
+    if remembering; then
+        mkdir -p "$CONF_DIR"
+        printf '%s\n' "$want" > "$memo"
+    fi
     ok "app windows tinted toward $want (remembered for later runs)"
 }
 
@@ -176,8 +178,10 @@ apply_shell_tint_color() {
             | sed 's/^/    /' \
             || { warn "could not tint the shell surfaces"; return 0; }
     fi
-    mkdir -p "$CONF_DIR"
-    printf '%s\n' "$want" > "$memo"
+    if remembering; then
+        mkdir -p "$CONF_DIR"
+        printf '%s\n' "$want" > "$memo"
+    fi
     ok "shell surfaces tinted toward $want (remembered for later runs)"
 }
 
@@ -186,7 +190,7 @@ install_transparency_css() {
 
     if [ "$level" = 0 ] || [ "$level" = "0.0" ] || [ "$level" = "0.00" ]; then
         run rm -f "$CONF_DIR/gtk4-transparency.css"
-        [ "${DRY_RUN:-0}" = 1 ] || { mkdir -p "$CONF_DIR"; printf '0\n' > "$CONF_DIR/app-transparency"; }
+        if remembering; then mkdir -p "$CONF_DIR"; printf '0\n' > "$CONF_DIR/app-transparency"; fi
         return 0
     fi
 
@@ -216,8 +220,10 @@ install_transparency_css() {
     # what an install produces.
     apply_app_tint_color
 
-    mkdir -p "$CONF_DIR"
-    printf '%s\n' "$level" > "$CONF_DIR/app-transparency"
+    if remembering; then
+        mkdir -p "$CONF_DIR"
+        printf '%s\n' "$level" > "$CONF_DIR/app-transparency"
+    fi
     local pct
     pct="$(python3 -c "print(round(float('$level')*100))" 2>/dev/null || echo "$level")"
     ok "app windows translucent at $level (${pct}% opacity, remembered for later runs)"
@@ -237,10 +243,17 @@ install_transparency_css() {
 #
 # The OSD radius is passed but has no stylesheet to rewrite: Custom OSD draws the
 # pill and Blur My Shell rounds the blur, so apply_radius_dconf writes it as a
-# dconf key. It stays in the argument list so that one preset is one argument
-# vector everywhere rather than two shapes to keep in step.
+# dconf key. BUTTON is the opposite case — a stylesheet site and no dconf key —
+# so it moves here and apply_radius_dconf skips it. Both stay in the argument
+# vector so that one preset is one argument vector everywhere rather than two
+# shapes to keep in step.
 apply_radius_css() {
-    local preset="${RADIUS_PRESET:-default}"
+    # The row, not the name that was typed for it: a memo written at a retired
+    # name would keep that name for good, and every later reader would have to
+    # go on knowing it. radius_preset_canonical in tokens/tokens.sh is the one
+    # place that maps one to the other.
+    local preset
+    preset="$(radius_preset_canonical "${RADIUS_PRESET:-default}")"
 
     if [ "${DRY_RUN:-0}" = 1 ]; then
         info "dry-run: rewrite the installed radii to the '$preset' preset"
@@ -251,21 +264,85 @@ apply_radius_css() {
         "$TOKEN_RADIUS_WINDOW" "$TOKEN_RADIUS_MENU" \
         "$TOKEN_RADIUS_QUICK_SETTINGS" "$TOKEN_RADIUS_NOTIFICATION" \
         "$TOKEN_RADIUS_DIALOG" "$TOKEN_RADIUS_POPUP" "$TOKEN_RADIUS_OSD" \
+        "$TOKEN_RADIUS_BUTTON" \
         | sed 's/^/    /'
 
-    mkdir -p "$CONF_DIR"
-    printf '%s\n' "$preset" > "$CONF_DIR/radius-preset"
-    # The preset name alone is not enough to reconstruct `custom`, so the seven
-    # values go beside it. Written from the resolved tokens rather than from the
-    # flag, so the memo holds what was actually applied.
-    if [ "$preset" = custom ]; then
-        printf '%s,%s,%s,%s,%s,%s,%s\n' \
-            "$TOKEN_RADIUS_WINDOW" "$TOKEN_RADIUS_MENU" \
-            "$TOKEN_RADIUS_QUICK_SETTINGS" "$TOKEN_RADIUS_NOTIFICATION" \
-            "$TOKEN_RADIUS_DIALOG" "$TOKEN_RADIUS_POPUP" "$TOKEN_RADIUS_OSD" \
-            > "$CONF_DIR/radius-custom"
+    # The rewrite above happens in a preview too — that is the whole point of
+    # one — but the memo below must not: see remembering() in lib/common.sh.
+    if remembering; then
+        mkdir -p "$CONF_DIR"
+        printf '%s\n' "$preset" > "$CONF_DIR/radius-preset"
+        # The preset name alone is not enough to reconstruct `custom`, so the
+        # eight values go beside it. Written from the resolved tokens rather
+        # than from the flag, so the memo holds what was actually applied.
+        #
+        # Removed again on the way to a named row, rather than left to go stale.
+        # install.sh only reads it while the preset is `custom` — so a stale one
+        # sat there unread until some later --radius-preset custom with no
+        # --radius-custom beside it, which then came up wearing eight values
+        # from months earlier instead of failing with "needs eight values".
+        if [ "$preset" = custom ]; then
+            printf '%s,%s,%s,%s,%s,%s,%s,%s\n' \
+                "$TOKEN_RADIUS_WINDOW" "$TOKEN_RADIUS_MENU" \
+                "$TOKEN_RADIUS_QUICK_SETTINGS" "$TOKEN_RADIUS_NOTIFICATION" \
+                "$TOKEN_RADIUS_DIALOG" "$TOKEN_RADIUS_POPUP" \
+                "$TOKEN_RADIUS_OSD" "$TOKEN_RADIUS_BUTTON" \
+                > "$CONF_DIR/radius-custom"
+        else
+            rm -f "$CONF_DIR/radius-custom"
+        fi
     fi
     ok "corner radii at the '$preset' preset (remembered for later runs)"
+}
+
+# Which titlebar-button look ships, on top of the size/colour base every look
+# shares (gtk4-50-window-controls.css / gtk3-tweaks.css). Un-prefixed sheets,
+# same as gtk4-transparency.css: installed or removed rather than switched on
+# at read time, since aura-glass-apply concatenates whatever it finds in
+# $CONF_DIR and cannot know which style this install was given. At most one of
+# the three is ever present — "minimal" is the base sheets' own look and adds
+# nothing on top.
+install_window_control_style() {
+    local want="${TITLEBUTTON_STYLE:-}" memo="$CONF_DIR/titlebutton-style"
+    if [ -z "$want" ] && [ -f "$memo" ]; then
+        want="$(cat "$memo" 2>/dev/null || true)"
+    fi
+    [ -n "$want" ] || want="minimal"
+
+    run rm -f "$CONF_DIR/gtk4-window-controls-adwaita.css" \
+              "$CONF_DIR/gtk3-window-controls-adwaita.css" \
+              "$CONF_DIR/gtk4-window-controls-material.css" \
+              "$CONF_DIR/gtk3-window-controls-material.css" \
+              "$CONF_DIR/gtk4-window-controls-flat.css" \
+              "$CONF_DIR/gtk3-window-controls-flat.css"
+    case "$want" in
+        adwaita)
+            run install -Dm644 "$REPO_ROOT/css/gtk4-window-controls-adwaita.css" \
+                               "$CONF_DIR/gtk4-window-controls-adwaita.css"
+            run install -Dm644 "$REPO_ROOT/css/gtk3-window-controls-adwaita.css" \
+                               "$CONF_DIR/gtk3-window-controls-adwaita.css"
+            ;;
+        material)
+            run install -Dm644 "$REPO_ROOT/css/gtk4-window-controls-material.css" \
+                               "$CONF_DIR/gtk4-window-controls-material.css"
+            run install -Dm644 "$REPO_ROOT/css/gtk3-window-controls-material.css" \
+                               "$CONF_DIR/gtk3-window-controls-material.css"
+            ;;
+        flat)
+            run install -Dm644 "$REPO_ROOT/css/gtk4-window-controls-flat.css" \
+                               "$CONF_DIR/gtk4-window-controls-flat.css"
+            run install -Dm644 "$REPO_ROOT/css/gtk3-window-controls-flat.css" \
+                               "$CONF_DIR/gtk3-window-controls-flat.css"
+            ;;
+        minimal) ;;
+        *) warn "unknown --titlebar-button-style '$want' — leaving it at minimal"
+           want="minimal" ;;
+    esac
+
+    if [ "${DRY_RUN:-0}" != 1 ] && [ -n "${TITLEBUTTON_STYLE:-}" ]; then
+        mkdir -p "$CONF_DIR"
+        printf '%s\n' "$want" > "$memo"
+    fi
 }
 
 install_css() {
@@ -314,6 +391,7 @@ install_css() {
         run rm -f "$CONF_DIR/shell-popup-blur.css"
     fi
     install_transparency_css
+    install_window_control_style
     # Over the shell sheets this step has just laid down, and after the solid
     # and popup ones are decided, so whichever set is installed is the set that
     # gets the colour.

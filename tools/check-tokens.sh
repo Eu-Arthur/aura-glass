@@ -18,7 +18,7 @@ REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 export REPO_ROOT
 export TOKEN_RADIUS_WINDOW TOKEN_RADIUS_MENU TOKEN_RADIUS_QUICK_SETTINGS
 export TOKEN_RADIUS_NOTIFICATION TOKEN_RADIUS_DIALOG TOKEN_RADIUS_POPUP
-export TOKEN_RADIUS_OSD
+export TOKEN_RADIUS_OSD TOKEN_RADIUS_BUTTON
 export TOKEN_SIGMA_PANEL TOKEN_SIGMA_APPFOLDER TOKEN_SIGMA_POPUP
 export TOKEN_SIGMA_WINDOW_LIST TOKEN_SIGMA_APPLICATIONS TOKEN_SIGMA_DASH_TO_DOCK
 export TOKEN_APP_TRANSPARENCY_SHIPPED TOKEN_APP_TINT
@@ -118,7 +118,9 @@ for entry in MANIFEST:
         failures.append("tokens/tokens.sh: %s is not defined, but "
                         "check-tokens.sh expects it" % token)
         continue
-    if kind == "css":
+    # raw is checked exactly like css — file plus regex — and differs only in
+    # who writes it back. See the manifest's docstring.
+    if kind in ("css", "raw"):
         check_css(token, want, rel, entry[3])
     else:
         check_ini(token, want, rel, entry[3], entry[4])

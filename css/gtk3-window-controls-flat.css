@@ -1,0 +1,47 @@
+/* ---------- WC variant: flat (GTK3 mirror) ----------
+ * No disc at all, ever — the glyph brightens instead, modelled on vinceliuice/Graphite-gtk-theme.
+ * Loaded after gtk3-tweaks.css, matching its selector groups
+ * for the same reason as the gtk4 sheet.
+ */
+
+headerbar button.titlebutton,
+.titlebar button.titlebutton,
+headerbar.default-decoration button.titlebutton,
+.titlebar.default-decoration button.titlebutton,
+headerbar button.titlebutton.close,
+headerbar button.titlebutton.minimize,
+headerbar button.titlebutton.maximize,
+headerbar.default-decoration button.titlebutton.close,
+headerbar.default-decoration button.titlebutton.minimize,
+headerbar.default-decoration button.titlebutton.maximize,
+.titlebar.default-decoration button.titlebutton.close,
+.titlebar.default-decoration button.titlebutton.minimize,
+.titlebar.default-decoration button.titlebutton.maximize {
+  background-color: transparent;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+headerbar button.titlebutton:hover,
+.titlebar button.titlebutton:hover,
+headerbar.default-decoration button.titlebutton:hover,
+.titlebar.default-decoration button.titlebutton:hover,
+headerbar button.titlebutton.close:hover,
+headerbar button.titlebutton.minimize:hover,
+headerbar button.titlebutton.maximize:hover,
+headerbar.default-decoration button.titlebutton.close:hover,
+headerbar.default-decoration button.titlebutton.minimize:hover,
+headerbar.default-decoration button.titlebutton.maximize:hover,
+.titlebar.default-decoration button.titlebutton.close:hover,
+.titlebar.default-decoration button.titlebutton.minimize:hover,
+.titlebar.default-decoration button.titlebutton.maximize:hover {
+  background-color: transparent;
+  color: #ffffff;
+}
+
+headerbar button.titlebutton.close:hover,
+.titlebar button.titlebutton.close:hover,
+headerbar.default-decoration button.titlebutton.close:hover,
+.titlebar.default-decoration button.titlebutton.close:hover {
+  background-color: transparent;
+  color: #ff5f57;
+}

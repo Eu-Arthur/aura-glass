@@ -24,6 +24,22 @@ run() {
     "$@"
 }
 
+# Whether this run may leave a $CONF_DIR memo behind.
+#
+# A dry run may not, for the obvious reason. A preview may not for a subtler
+# one: bin/aura-glass-preview calls the very same apply_* functions install.sh
+# does, and every one of them writes a memo as its last step — so a preview used
+# to write the memo and then put the old one back afterwards. That restore is
+# only safe while nothing else is writing the same file, and Apply is exactly
+# something else writing the same file: press it while a preview tick is still
+# in flight and install.sh --settings-only writes the new value, the preview's
+# restore puts the old one back a moment later, and the window re-reads the old
+# one. Not writing at all is what closes that window; there is then nothing to
+# restore and nothing to race.
+remembering() {
+    [ "${DRY_RUN:-0}" != 1 ] && [ "${PREVIEW_MODE:-0}" != 1 ]
+}
+
 # confirm "question" [default_yes]
 # --yes answers yes; a non-interactive stdin answers with the default.
 confirm() {
@@ -62,6 +78,34 @@ confirm_always() {
 }
 
 have() { command -v "$1" >/dev/null 2>&1; }
+
+# multi_monitor_detected — whether more than one display is connected right
+# now. Used by the "Best experience" quick-start choice in the text wizard's
+# Step 0 to decide whether syncing the login screen's monitor layout would
+# actually fix anything — a single-display machine has nothing for it to fix,
+# and the GUI wizard makes the same call off Gdk's monitor list.
+#
+# ~/.config/monitors.xml is GNOME's own record of the layout it last saved and
+# is checked first, since it is what sync_gdm_monitors in lib/steps-gdm.sh
+# goes on to copy; a machine that has never opened GNOME Settings' Displays
+# panel will not have one, so this falls back to counting connected outputs
+# under /sys/class/drm, which exists on any machine with a DRM driver loaded
+# whether or not a session has run yet.
+multi_monitor_detected() {
+    local xml="$HOME/.config/monitors.xml" n=0 f
+    if [ -r "$xml" ]; then
+        n="$(grep -c '<logicalmonitor>' "$xml" 2>/dev/null || echo 0)"
+        if [ "$n" -gt 0 ]; then
+            [ "$n" -gt 1 ]
+            return
+        fi
+    fi
+    for f in /sys/class/drm/*/status; do
+        [ -r "$f" ] || continue
+        [ "$(cat "$f" 2>/dev/null)" = "connected" ] && n=$((n + 1))
+    done
+    [ "$n" -gt 1 ]
+}
 
 # prompt_logout — asks whether to log out now (default No).
 # If confirmed, logs out of the current desktop session.

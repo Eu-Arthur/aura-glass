@@ -27,6 +27,14 @@ Each entry is (token name, kind, *args).
        token. Section-scoped because corner-radius and sigma both appear under
        several Blur My Shell components with different values.
 
+  raw: (file, regex) — checked exactly like css, and deliberately not returned
+       by css_entries(). It is for a value buried inside one dconf key rather
+       than standing on its own as a key of its own: Blur My Shell keeps every
+       pipeline in a single GVariant blob under `pipelines`, and a corner effect
+       inside it is a radius the section/key form cannot reach. The writer for
+       these is apply_radius_dconf, which reads the live key rather than a file
+       in $CONF_DIR — which is why apply-radius-preset.py must not see them.
+
 The `[^}]*?` in the CSS patterns cannot cross a closing brace, so each one stays
 inside the rule its selector opened.
 """
@@ -116,6 +124,25 @@ MANIFEST = [
     ("TOKEN_RADIUS_OSD", "ini", "dconf/core.ini",
      "blur-my-shell/popup", "osd-corner-radius"),
 
+    # The blur behind an app window is rounded twice over: once by
+    # [applications] corner-radius above, and once by the corner effect in the
+    # `windows` pipeline that same component names. Only the first was ever
+    # moved by a preset, so a soft desktop had its blur rounded at 16 by one and
+    # at 30 by the other — the exact "two stacked surfaces at different radii"
+    # fault this file exists to prevent, in one component. Matched by pipeline
+    # name rather than by its generated id, which is a machine's own and not a
+    # thing to hard-code.
+    ("TOKEN_RADIUS_WINDOW", "raw", "dconf/core.ini",
+     r"'name': <'windows'>, 'effects': <\[.*?'type': <'corner'>, "
+     r"'id': <'[^']*'>, 'params': <\{'radius': <(\d+)>"),
+
+    # No ini entry: buttons have no Blur My Shell component to disagree with,
+    # the same way TOKEN_RADIUS_OSD has no css/ site — one direction each.
+    ("TOKEN_RADIUS_BUTTON", "css", "css/gtk4-20-buttons.css",
+     r"^button\.text-button,\nbutton\.flat\.text-button,\nbutton\.pill,\n"
+     r"button\.suggested-action,\nbutton\.destructive-action \{"
+     r"[^}]*?border-radius: (\d+)px"),
+
     ("TOKEN_SIGMA_PANEL", "ini", "dconf/core.ini",
      "blur-my-shell/panel", "sigma"),
     ("TOKEN_SIGMA_APPFOLDER", "ini", "dconf/core.ini",
@@ -165,13 +192,25 @@ RADIUS_TOKENS = [
     "TOKEN_RADIUS_DIALOG",
     "TOKEN_RADIUS_POPUP",
     "TOKEN_RADIUS_OSD",
+    "TOKEN_RADIUS_BUTTON",
 ]
 
 
 def css_entries(tokens=None):
-    """Every css entry, optionally narrowed to a set of token names."""
+    """Every css entry, optionally narrowed to a set of token names.
+
+    `raw` entries are not css entries and are not returned here on purpose: a
+    stylesheet rewriter pointed at one would look for dconf/core.ini in
+    $CONF_DIR and report an incomplete install. See the module docstring.
+    """
     return [e for e in MANIFEST
             if e[1] == "css" and (tokens is None or e[0] in tokens)]
+
+
+def raw_entries(tokens=None):
+    """Every raw (file, regex) entry, optionally narrowed to token names."""
+    return [e for e in MANIFEST
+            if e[1] == "raw" and (tokens is None or e[0] in tokens)]
 
 
 def ini_entries(tokens=None):

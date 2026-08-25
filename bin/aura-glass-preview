@@ -9,8 +9,18 @@
 #                            [--radius-custom W,M,Q,N,D,P,O]
 #                            [--blur-strength PCT] [--popup-blur 0|1]
 #                            [--window-blur 0|1] [--scope gtk|all]
+#                            [--app-blur-allow LIST] [--app-blur-block LIST]
+#     aura-glass-preview apps --allow LIST --block LIST
+#                             [--window-blur 0|1] [--scope gtk|all]
 #     aura-glass-preview revert
 #     aura-glass-preview status
+#
+# apps is set's per-app-blur-only sibling: four dconf writes through
+# apply_app_blur and nothing else — no install_css, no aura-glass-apply. The
+# settings window's Per-app blur page calls it on every switch flipped, and a
+# switch is not a reason to rebuild the whole CSS pipeline; set stays the path
+# for a tint, transparency or radius candidate, where that pipeline is the
+# point.
 #
 # begin snapshots the installed CSS sheets, the blur-my-shell dconf subtree and
 # the $CONF_DIR memos that the functions below would otherwise overwrite. set
@@ -26,11 +36,21 @@
 # drift from it within a release.
 #
 # The one thing set is not allowed to do is leave a $CONF_DIR memo different
-# from what it was before begin — every apply_* function below writes one as
-# its last step, so set restores the snapshot taken by begin immediately
-# afterwards. That is the whole safety property this script exists to keep:
-# Settings() in the GUI, and install.sh on the next real run, must see exactly
-# what was last actually applied, never a preview that happened to be showing.
+# from what it was before begin. That is the whole safety property this script
+# exists to keep: Settings() in the GUI, and install.sh on the next real run,
+# must see exactly what was last actually applied, never a preview that happened
+# to be showing.
+#
+# It is kept by not writing the memos at all. set exports PREVIEW_MODE=1, which
+# remembering() in lib/common.sh reads, and every apply_* function below skips
+# its memo write. It used to be kept the other way round — write, then restore
+# the snapshot begin took — and that restore was only safe while nothing else
+# was writing the same files. Apply is something else writing the same files:
+# pressed while a set is still in flight, install.sh --settings-only wrote the
+# new memo and this script's restore put the old one back a moment later, so the
+# window re-read the old value and every preset click appeared to snap back to
+# whatever was already installed. There is now nothing to restore and nothing to
+# race.
 #
 # revert restores the CSS sheets and the blur-my-shell dconf subtree
 # byte-for-byte from the snapshot and re-splices, so closing a preview without
@@ -66,12 +86,14 @@ fi
 
 BMS=/org/gnome/shell/extensions/blur-my-shell
 
-# The seven memos every function this script calls can write. Anything not on
-# this list is not touched by set, so it needs no place in the snapshot.
+# The memos every function this script calls would write if PREVIEW_MODE did not
+# stop it. set no longer touches any of them, but begin still snapshots them and
+# revert still restores them: that is what repairs a $CONF_DIR left mid-preview
+# by an older build of this script.
 PREVIEW_MEMOS="app-tint-color shell-tint-color app-transparency radius-preset radius-custom blur-strength popup-blur window-blur app-blur-scope app-blur-allow app-blur-block"
 
 usage() {
-    printf 'usage: aura-glass-preview begin|set [options]|revert|status\n' >&2
+    printf 'usage: aura-glass-preview begin|set [options]|apps [options]|revert|status\n' >&2
     exit 2
 }
 
@@ -114,9 +136,9 @@ cmd_begin() {
     touch "$MARKER"
 }
 
-# Put every memo set touches back to exactly what begin found — present or
-# absent, since a memo set created that did not exist before is as much a
-# change as one it edited.
+# Put every memo back to exactly what begin found — present or absent, since a
+# memo created that did not exist before is as much a change as one that was
+# edited. Only revert calls this now; set writes nothing to put back.
 restore_memos() {
     local name
     for name in $PREVIEW_MEMOS; do
@@ -132,7 +154,9 @@ cmd_set() {
     require_begun
 
     local app_tint="" shell_tint="" transparency="" radius_preset="" \
-        radius_custom="" blur_strength="" popup_blur="" window_blur="" scope=""
+        radius_custom="" blur_strength="" popup_blur="" window_blur="" scope="" \
+        app_blur_allow="" app_blur_allow_given=0 \
+        app_blur_block="" app_blur_block_given=0
     while [ $# -gt 0 ]; do
         case "$1" in
             --app-tint) app_tint="$2"; shift 2 ;;
@@ -144,9 +168,16 @@ cmd_set() {
             --popup-blur) popup_blur="$2"; shift 2 ;;
             --window-blur) window_blur="$2"; shift 2 ;;
             --scope) scope="$2"; shift 2 ;;
+            --app-blur-allow) app_blur_allow="$2"; app_blur_allow_given=1; shift 2 ;;
+            --app-blur-block) app_blur_block="$2"; app_blur_block_given=1; shift 2 ;;
             *) usage ;;
         esac
     done
+
+    # Read by remembering() in lib/common.sh: the apply_* functions below do
+    # every rewrite they normally do and skip every $CONF_DIR memo. See the
+    # header for why not writing beats writing and restoring.
+    export PREVIEW_MODE=1
 
     # Frosted or transparent only — solid mode removes the whole theme rather
     # than tuning it, and is applied, never previewed.
@@ -160,6 +191,7 @@ cmd_set() {
         IFS=',' read -r TOKEN_RADIUS_WINDOW TOKEN_RADIUS_MENU \
             TOKEN_RADIUS_QUICK_SETTINGS TOKEN_RADIUS_NOTIFICATION \
             TOKEN_RADIUS_DIALOG TOKEN_RADIUS_POPUP TOKEN_RADIUS_OSD \
+            TOKEN_RADIUS_BUTTON \
             <<< "$radius_custom"
     else
         radius_preset_values "${radius_preset:-default}" \
@@ -173,12 +205,18 @@ cmd_set() {
     # result into the theme and forces the shell to reload it.
     install_css >/dev/null
 
-    apply_radius_dconf >/dev/null
-
     export WINDOW_BLUR_EXPLICIT=1
     export WANT_WINDOW_BLUR="${window_blur:-1}"
     export APP_BLUR_SCOPE_EXPLICIT=1
     export APP_BLUR_SCOPE="${scope:-gtk}"
+    if [ "$app_blur_allow_given" = 1 ]; then
+        export APP_BLUR_ALLOW_EXPLICIT=1
+        export APP_BLUR_ALLOW="$app_blur_allow"
+    fi
+    if [ "$app_blur_block_given" = 1 ]; then
+        export APP_BLUR_BLOCK_EXPLICIT=1
+        export APP_BLUR_BLOCK="$app_blur_block"
+    fi
     apply_app_blur >/dev/null
 
     export POPUP_BLUR_EXPLICIT=1
@@ -195,7 +233,40 @@ cmd_set() {
         apply_blur_strength >/dev/null
     fi
 
-    restore_memos
+    # Last, and after the blur-strength block above rather than before it. That
+    # block resets the whole `pipelines` blob from the shipped literal, and
+    # apply_radius_dconf's corner effect lives inside that same blob — run the
+    # other way round, a preview at any strength but 100% put the windows blur
+    # corner back to the shipped 30 behind a window painted at the candidate.
+    # load_dconf in lib/steps-dconf.sh keeps the same order for the same reason.
+    apply_radius_dconf >/dev/null
+}
+
+cmd_apps() {
+    require_begun
+
+    local allow="" block="" window_blur="1" scope="gtk"
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --allow) allow="$2"; shift 2 ;;
+            --block) block="$2"; shift 2 ;;
+            --window-blur) window_blur="$2"; shift 2 ;;
+            --scope) scope="$2"; shift 2 ;;
+            *) usage ;;
+        esac
+    done
+
+    export PREVIEW_MODE=1
+    export WANT_BLUR=1
+    export WINDOW_BLUR_EXPLICIT=1
+    export WANT_WINDOW_BLUR="$window_blur"
+    export APP_BLUR_SCOPE_EXPLICIT=1
+    export APP_BLUR_SCOPE="$scope"
+    export APP_BLUR_ALLOW_EXPLICIT=1
+    export APP_BLUR_ALLOW="$allow"
+    export APP_BLUR_BLOCK_EXPLICIT=1
+    export APP_BLUR_BLOCK="$block"
+    apply_app_blur >/dev/null
 }
 
 cmd_revert() {
@@ -234,6 +305,7 @@ cmd_status() {
 case "${1:-}" in
     begin)  shift; cmd_begin "$@" ;;
     set)    shift; cmd_set "$@" ;;
+    apps)   shift; cmd_apps "$@" ;;
     revert) shift; cmd_revert "$@" ;;
     status) shift; cmd_status "$@" ;;
     *) usage ;;

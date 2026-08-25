@@ -103,12 +103,13 @@ install_bms() {
        && [ -f "$EXT_DIR/$BMS_UUID/components/popup/index.js" ] \
        && [ "$(cat "$CONF_DIR/bms-ref" 2>/dev/null || true)" = "$BMS_REF" ] \
        && patch_stamp_current bms-overview-patch "$REPO_ROOT/patches/$BMS_PATCH" \
+       && patch_stamp_current bms-subwindow-patch "$REPO_ROOT/patches/$BMS_SUBWIN_PATCH" \
        && ext_supports_shell "$EXT_DIR/$BMS_UUID" "$GNOME_MAJOR"; then
         skip "$BMS_UUID already built from $BMS_REF"
         return 0
     fi
 
-    info "no release carries the popup component — building from $BMS_REF + patches/$BMS_PATCH"
+    info "no release carries the popup component — building from $BMS_REF + patches/$BMS_PATCH + patches/$BMS_SUBWIN_PATCH"
     local src="$SRC_CACHE/blur-my-shell"
     if [ -d "$src/.git" ]; then
         run git -C "$src" checkout --quiet -- . 2>/dev/null || true
@@ -118,12 +119,19 @@ install_bms() {
     # Upstream's `blur-on-overview: false` leaves the blur actor in the window,
     # and the overview clones it into every window preview, where it shows a
     # frozen picture of the desktop that changes when the preview is hovered.
-    # The patch makes the setting mean what it says. The checkout above is reset
-    # by the `git checkout -- .` that precedes it, so this always applies to a
-    # clean tree.
+    # The overview patch makes the setting mean what it says. The subwindow
+    # patch makes check_blur match a window's whole transient-for chain and
+    # its GTK application id, not just its own wm_class, and adds ATTACHED and
+    # UTILITY to the frame types it accepts — without it a blurred app's own
+    # dialogs and tool palettes stay unblurred. Order matters: the second
+    # patch's hunks are offset against the first's output. The checkout above
+    # is reset by the `git checkout -- .` that precedes it, so this always
+    # applies to a clean tree.
     if [ "${DRY_RUN:-0}" != 1 ]; then
         git -C "$src" apply --whitespace=nowarn "$REPO_ROOT/patches/$BMS_PATCH" \
             || die "the Blur My Shell overview patch did not apply — upstream may have moved"
+        git -C "$src" apply --whitespace=nowarn "$REPO_ROOT/patches/$BMS_SUBWIN_PATCH" \
+            || die "the Blur My Shell subwindow patch did not apply — upstream may have moved"
     fi
 
     local podir=(--podir=../po)
@@ -133,7 +141,7 @@ install_bms() {
     fi
 
     if [ "${DRY_RUN:-0}" = 1 ]; then
-        info "dry-run: apply patches/$BMS_PATCH, gnome-extensions pack in $src/src, then install the zip"
+        info "dry-run: apply patches/$BMS_PATCH and patches/$BMS_SUBWIN_PATCH, gnome-extensions pack in $src/src, then install the zip"
         return 0
     fi
 
@@ -186,7 +194,8 @@ install_bms() {
     printf '%s\n' "$BMS_REF" > "$CONF_DIR/bms-ref"
     printf 'git\n' > "$CONF_DIR/bms-source"
     patch_stamp_write bms-overview-patch "$REPO_ROOT/patches/$BMS_PATCH"
-    ok "$BMS_UUID (built from $BMS_REF, with the popup component and the overview patch)"
+    patch_stamp_write bms-subwindow-patch "$REPO_ROOT/patches/$BMS_SUBWIN_PATCH"
+    ok "$BMS_UUID (built from $BMS_REF, with the popup component, the overview patch, and the subwindow patch)"
 }
 
 # aura-glass-blur@aura-glass.local — "Blur This App" in the window right-click

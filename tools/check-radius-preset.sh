@@ -23,12 +23,12 @@ REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=../tokens/tokens.sh
 . "$REPO_ROOT/tokens/tokens.sh"
 
-# Every preset's seven values, as `name:v,v,v,v,v,v,v`, so the Python below is
+# Every preset's eight values, as `name:v,v,v,v,v,v,v,v`, so the Python below is
 # testing the same table install.sh reads rather than a copy of it.
 presets=""
 for p in $RADIUS_PRESETS; do
     radius_preset_values "$p" || { echo "radius_preset_values rejected '$p'"; exit 1; }
-    presets="$presets$p:$TOKEN_RADIUS_WINDOW,$TOKEN_RADIUS_MENU,$TOKEN_RADIUS_QUICK_SETTINGS,$TOKEN_RADIUS_NOTIFICATION,$TOKEN_RADIUS_DIALOG,$TOKEN_RADIUS_POPUP,$TOKEN_RADIUS_OSD
+    presets="$presets$p:$TOKEN_RADIUS_WINDOW,$TOKEN_RADIUS_MENU,$TOKEN_RADIUS_QUICK_SETTINGS,$TOKEN_RADIUS_NOTIFICATION,$TOKEN_RADIUS_DIALOG,$TOKEN_RADIUS_POPUP,$TOKEN_RADIUS_OSD,$TOKEN_RADIUS_BUTTON
 "
 done
 

@@ -105,8 +105,13 @@ on_disk = sorted(f for f in os.listdir(css_dir) if f.endswith(".css"))
 
 shell_list = array_entries(apply_text, "SHELL_SNIPPETS", APPLY)
 gtk4_list = array_entries(apply_text, "GTK4_SNIPPETS", APPLY)
-# gtk3 is applied on its own line rather than through an array, being one file.
-gtk3_list = re.findall(r'apply "\$GTK3_CSS"\s+\d+\s+"\$DIR/([^"]+\.css)"', apply_text)
+# gtk3 is applied on its own statement rather than through an array, which can
+# now span backslash-continued lines (gtk3-tweaks.css plus its style variants)
+# — so grab the whole statement up to its unescaped newline, then every
+# "$DIR/...css" token inside it, rather than just the first.
+_gtk3_stmt = re.search(r'apply "\$GTK3_CSS".*?(?<!\\)\n', apply_text, re.S)
+gtk3_list = (re.findall(r'"\$DIR/([^"]+\.css)"', _gtk3_stmt.group(0))
+            if _gtk3_stmt else [])
 
 applied = set(shell_list) | set(gtk4_list) | set(gtk3_list)
 

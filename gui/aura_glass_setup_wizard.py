@@ -129,7 +129,7 @@ PAGE_FIELDS = {
     "blur": ("blur",),
     "blur-details": ("popup_blur", "scope", "transparency"),
     "icons": ("want_icons", "icons"),
-    "cursors": ("want_cursors", "cursors"),
+    "cursors": ("want_cursors", "cursors", "want_cursor_size", "cursor_size"),
     "extensions": ("want_osd", "extensions"),
     "gdm": ("gdm", "gdm_monitors"),
 }
@@ -249,6 +249,12 @@ class Answers:
         self.icons = "reversal"
         self.want_cursors = True
         self.cursors = "aosp"
+        # Independent of the pair above: pointer theme and pointer size are
+        # two different gsettings keys, so "leave my theme alone" is not a
+        # statement about size. 20 is the wizard's own recommendation, not
+        # install.sh's flagless default (which leaves the key untouched).
+        self.want_cursor_size = True
+        self.cursor_size = "20"
         self.want_osd = True
         # None means "say nothing about extensions", which leaves install.sh on
         # the recommended pack. Only a readable catalogue turns this into a list.
@@ -262,6 +268,26 @@ class Answers:
         if isinstance(self.extensions, list):
             clone.extensions = list(self.extensions)
         return clone
+
+    @classmethod
+    def best(cls, catalogue, gdm_present, multi_monitor):
+        """Every default this project would pick for itself.
+
+        Everything else about the look is already __init__'s own default —
+        accent and font from their memos, Reversal and AOSP recommended
+        rather than install.sh's older bare defaults of Colloid and Adwaita.
+        Only the three questions with no single obviously-right answer move:
+        every extension rather than the recommended tier (the same set
+        on_ext_preset's "Everything" button builds), GDM theming wherever
+        there is a GDM to theme, and the monitor sync only where it would fix
+        something — a single display has nothing for it to fix.
+        """
+        answers = cls()
+        answers.extensions = [e["uuid"] for e in catalogue
+                              if e["tier"] in ("recommended", "full")] or None
+        answers.gdm = gdm_present
+        answers.gdm_monitors = gdm_present and multi_monitor
+        return answers
 
     def to_argv(self, gdm_present):
         args = ["--accent", self.accent, "--font", self.font]
@@ -292,6 +318,9 @@ class Answers:
             args += ["--cursors", self.cursors]
         else:
             args.append("--no-cursors")
+
+        if self.want_cursor_size:
+            args += ["--cursor-size", self.cursor_size]
 
         args.append("--osd" if self.want_osd else "--no-osd")
 
@@ -356,6 +385,24 @@ class Window(Adw.ApplicationWindow):
     def finish(self):
         self.get_application().result = self.answers.to_argv(self.gdm_present)
         self.close()
+
+    def _multi_monitor(self):
+        """More than one display connected right now.
+
+        install.sh's own text wizard makes the same call off
+        ~/.config/monitors.xml and /sys/class/drm (multi_monitor_detected in
+        lib/common.sh) for the machines that reach it with no display at all
+        to ask Gdk. Here there is one, so this asks it directly.
+        """
+        display = Gdk.Display.get_default()
+        if display is None:
+            return False
+        return display.get_monitors().get_n_items() > 1
+
+    def _on_best(self, _button):
+        self.answers = Answers.best(self.catalogue, self.gdm_present,
+                                    self._multi_monitor())
+        self.finish()
 
     # ---- page furniture -----------------------------------------------------
 
@@ -445,27 +492,28 @@ class Window(Adw.ApplicationWindow):
         status = Adw.StatusPage(
             icon_name="applications-graphics-symbolic",
             title="aura-glass",
-            description="A few questions about how you want the desktop to "
-                        "look, and then the terminal takes it from there.\n\n"
-                        "None of this is permanent. Every choice here — and a "
-                        "good many that are not — can be changed afterwards in "
-                        "the aura-glass settings window, without reinstalling "
-                        "anything.")
+            description="Pick the best this project has, or answer a few "
+                        "questions about the look yourself. Either way, "
+                        "everything here can be changed afterwards in the "
+                        "aura-glass settings window.")
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12,
                       halign=Gtk.Align.CENTER)
-        start = Gtk.Button(label="Get Started")
-        start.add_css_class("suggested-action")
-        start.add_css_class("pill")
-        start.connect("clicked", lambda _b: self.advance("welcome"))
-        box.append(start)
+        best = Gtk.Button(label="Best experience")
+        best.add_css_class("suggested-action")
+        best.add_css_class("pill")
+        best.set_tooltip_text(
+            "The recommended look, every extension, and the login screen "
+            "themed — the terminal will ask for your password once")
+        best.connect("clicked", self._on_best)
+        box.append(best)
 
-        defaults = Gtk.Button(label="Skip all, use defaults")
-        defaults.add_css_class("flat")
-        defaults.set_tooltip_text(
-            "Install the recommended look without answering anything")
-        defaults.connect("clicked", lambda _b: self.finish())
-        box.append(defaults)
+        customize = Gtk.Button(label="Customize")
+        customize.add_css_class("flat")
+        customize.add_css_class("pill")
+        customize.set_tooltip_text("Answer each question yourself")
+        customize.connect("clicked", lambda _b: self.advance("welcome"))
+        box.append(customize)
         status.set_child(box)
 
         page = Adw.NavigationPage(child=Adw.ToolbarView(), title="Welcome",
@@ -479,10 +527,8 @@ class Window(Adw.ApplicationWindow):
         page = Adw.PreferencesPage()
         group = Adw.PreferencesGroup(
             title="Accent colour",
-            description="The colour the panel, the highlights and the icon "
-                        "theme are built around. GNOME offers these nine and "
-                        "no others — a colour of your own would repaint every "
-                        "app window and none of the shell.")
+            description="Panel, highlights and icons are built around it. "
+                        "GNOME offers these nine and no others.")
 
         flow = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE,
                            homogeneous=True, column_spacing=10,
@@ -529,10 +575,8 @@ class Window(Adw.ApplicationWindow):
         # fetched during the install, not here.
         fonts = Adw.PreferencesGroup(
             title="Interface font",
-            description="The font the whole desktop is set in: labels, menus, "
-                        "titlebars and documents. Whichever one you pick keeps "
-                        "the text size already set on this machine, and the "
-                        "settings window can change it back afterwards.")
+            description="Labels, menus, titlebars, documents — the whole "
+                        "desktop. Keeps your current text size.")
         self.radio_rows(fonts, [(v, t, sub, None) for v, t, sub in FONTS],
                         self.answers.font, self.set_font)
         page.add(fonts)
@@ -546,10 +590,8 @@ class Window(Adw.ApplicationWindow):
         page = Adw.PreferencesPage()
         group = Adw.PreferencesGroup(
             title="Frosted glass, or solid",
-            description="The blur is the look, and it is also the part that "
-                        "costs a GPU something. Solid mode installs the same "
-                        "theme with opaque surfaces instead of translucent "
-                        "ones.")
+            description="The blur is the look, and what costs the GPU. "
+                        "Solid keeps the theme but drops the transparency.")
         self.radio_rows(group, [
             ("frosted", "Frosted glass",
              "Blur behind the top bar, popups, menus and the volume pill",
@@ -576,9 +618,9 @@ class Window(Adw.ApplicationWindow):
 
         scope = Adw.PreferencesGroup(
             title="Blur behind app windows",
-            description="Every blurred window is work the compositor does on "
-                        "every frame, which is why this is a separate question "
-                        "from the one above.")
+            description="Every blurred window is compositor work, every "
+                        "frame — worth asking separately from the switch "
+                        "above.")
         self.radio_rows(scope, [
             ("gtk", "GTK and GNOME apps",
              "Files, Settings, Console and the rest — light on the CPU", None),
@@ -621,9 +663,8 @@ class Window(Adw.ApplicationWindow):
         page = Adw.PreferencesPage()
         group = Adw.PreferencesGroup(
             title="Icon theme",
-            description="All three are other people's work, fetched from "
-                        "GitHub at a pinned commit. Have a look before you "
-                        "pick one.")
+            description="Other people's work, fetched from GitHub. Have a "
+                        "look before you pick.")
         current = self.answers.icons if self.answers.want_icons else "keep"
         self.radio_rows(group, [
             ("reversal", "Reversal — recommended",
@@ -666,12 +707,38 @@ class Window(Adw.ApplicationWindow):
              "Leaves your current pointer theme alone, whatever set it", None),
         ], current, self.on_cursors)
         page.add(group)
+
+        # A separate group and a separate flag from the theme above: keeping
+        # your own pointer theme is not a statement about its size, so this
+        # question stands on its own the same way --cursor-size and --cursors
+        # are two independent gsettings keys in install.sh.
+        size_group = Adw.PreferencesGroup(
+            title="Pointer size",
+            description="20px suits the packs above; GNOME's own default is "
+                        "24px.")
+        size_current = (self.answers.cursor_size
+                         if self.answers.want_cursor_size else "keep")
+        self.radio_rows(size_group, [
+            ("20", "20px — recommended",
+             "Reads best with the pointer packs above", None),
+            ("24", "24px", "GNOME's own default", None),
+            ("32", "32px", "Large", None),
+            ("keep", "Default",
+             "Leaves your current pointer size alone, whatever set it", None),
+        ], size_current, self.on_cursor_size)
+        page.add(size_group)
+
         return self.shell("cursors", "Pointer", page)
 
     def on_cursors(self, value):
         self.answers.want_cursors = value != "keep"
         if value != "keep":
             self.answers.cursors = value
+
+    def on_cursor_size(self, value):
+        self.answers.want_cursor_size = value != "keep"
+        if value != "keep":
+            self.answers.cursor_size = value
 
     def page_extensions(self):
         page = Adw.PreferencesPage()
@@ -689,9 +756,8 @@ class Window(Adw.ApplicationWindow):
         if not self.catalogue:
             group = Adw.PreferencesGroup(
                 title="Extensions",
-                description="The catalogue could not be read, so the "
-                            "recommended set will be installed. You can change "
-                            "it afterwards in the settings window.")
+                description="Catalogue unreadable — installing the "
+                            "recommended set. Change it later in Settings.")
             group.add(Adw.ActionRow(
                 title="bin/aura-glass-ext did not answer", sensitive=False))
             page.add(group)
@@ -699,8 +765,7 @@ class Window(Adw.ApplicationWindow):
 
         core = Adw.PreferencesGroup(
             title="Always installed",
-            description="What the look is built out of. These are not "
-                        "optional — without them there is no theme to see.")
+            description="What the look is built out of — not optional.")
         for entry in self.catalogue:
             if entry["tier"] != "core":
                 continue
@@ -710,9 +775,8 @@ class Window(Adw.ApplicationWindow):
 
         actions = Adw.PreferencesGroup(
             title="Optional extensions",
-            description="Everything below is a switch. The recommended set is "
-                        "on to begin with; none of it is required, and all of "
-                        "it can be changed later.")
+            description="The recommended set starts on. None required, all "
+                        "changeable later.")
         row = Adw.ActionRow(title="Select", subtitle="All at once")
         box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6,
                       valign=Gtk.Align.CENTER)
@@ -768,10 +832,8 @@ class Window(Adw.ApplicationWindow):
         page = Adw.PreferencesPage()
         group = Adw.PreferencesGroup(
             title="Login screen",
-            description="Both of these are system-wide rather than yours "
-                        "alone, so the terminal will ask for your password "
-                        "once it gets to them. Neither is needed for the "
-                        "desktop itself.")
+            description="System-wide, not just yours — the terminal will ask "
+                        "for your password.")
 
         theme = Adw.SwitchRow(
             title="Theme the GDM login screen",
@@ -784,8 +846,7 @@ class Window(Adw.ApplicationWindow):
 
         monitors = Adw.SwitchRow(
             title="Match the login screen to your monitor layout",
-            subtitle="Worth having on a multi-monitor machine, where GDM "
-                     "otherwise picks its own primary display",
+            subtitle="Fixes GDM otherwise picking its own primary display",
             active=self.answers.gdm_monitors)
         monitors.connect("notify::active", lambda r, _p: setattr(
             self.answers, "gdm_monitors", r.get_active()))
@@ -799,8 +860,8 @@ class Window(Adw.ApplicationWindow):
         page = Adw.PreferencesPage()
         group = Adw.PreferencesGroup(
             title="Ready to install",
-            description="The window closes and the terminal takes over. It "
-                        "will fetch a few things, so give it a minute.")
+            description="The window closes and the terminal takes over — "
+                        "give it a minute.")
 
         if answers.blur:
             scope = {"gtk": "GTK and GNOME apps",
@@ -833,6 +894,9 @@ class Window(Adw.ApplicationWindow):
              if answers.want_icons else "Kept as they are", "icons"),
             ("Pointer", PACK_NAMES.get(answers.cursors, answers.cursors)
              if answers.want_cursors else "Kept as they are", "cursors"),
+            ("Pointer size",
+             "%spx" % answers.cursor_size if answers.want_cursor_size
+             else "Kept as it is", "cursors"),
             ("Volume pill", "Yes" if answers.want_osd else "GNOME's own OSD",
              "extensions"),
             ("Optional extensions", extras, "extensions"),

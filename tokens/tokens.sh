@@ -101,9 +101,23 @@ TOKEN_RADIUS_POPUP=20
 #   dconf/core.ini        [blur-my-shell/popup] osd-corner-radius
 TOKEN_RADIUS_OSD=12
 
+# Buttons carrying a label — Apply, Save, and the rest of gtk4-20-buttons.css's
+# own button.text-button block. Shipped as a pill (9999) rather than a curated
+# pixel figure: 9999 is a sentinel a border-radius this side of a button's own
+# height always clips to a full capsule, so `pill` and `default` both read as
+# 9999 and stay a capsule at any button height, the same way the theme's own
+# blanket `button { border-radius: 9999px }` already did before this block
+# existed. Bounded by radius_bounds() up to 9999, not by the flat/rounded
+# ladder the other six columns share: it is not part of the picture those six
+# were bisected against, and RADIUS_MAX_BUTTON exists to let it move
+# independently of them.
+#   css/gtk4-20-buttons.css  button.text-button, button.flat.text-button,
+#                            button.pill
+TOKEN_RADIUS_BUTTON=9999
+
 # ---------- Radius presets ----------
 #
-# The seven values above are the `default` row of the table below, and the only
+# The eight values above are the `default` row of the table below, and the only
 # row the shipped files are written at. --radius-preset picks a different row,
 # and lib/steps-css.sh + lib/steps-dconf.sh apply it to the *installed* copies
 # — never to css/ or dconf/core.ini, which stay at `default` so that
@@ -139,9 +153,17 @@ TOKEN_RADIUS_OSD=12
 # `pill` is gone. install.sh still accepts the name and resolves it to
 # `rounded`, because it was a --radius-preset anyone could have run and the
 # memo it wrote is still sitting in $CONF_DIR on those machines.
-RADIUS_PRESETS="flat sharp soft medium default rounded"
+#
+# `adwaita` is the one row not bisected against this project's own screenshots
+# — it is pinned to libadwaita's own shipped corners instead, for a desktop
+# that wants this theme's windows to match an unthemed GTK4 app's. It sits
+# between `sharp` and `soft` because 12px does. Button stays at the sentinel
+# 9999 here (a capsule, same as `default`) rather than dropping to a pixel
+# figure — libadwaita's own flat buttons are not the pill this project's are,
+# so there is no libadwaita number to pin the button column to.
+RADIUS_PRESETS="flat sharp adwaita soft medium default rounded"
 
-# Set the seven TOKEN_RADIUS_* values for a preset. Fails on an unknown name
+# Set the eight TOKEN_RADIUS_* values for a preset. Fails on an unknown name
 # rather than falling back to default: a typo in --radius-preset that silently
 # installed the shipped look would be indistinguishable from the flag working.
 radius_preset_values() {
@@ -154,6 +176,7 @@ radius_preset_values() {
             TOKEN_RADIUS_DIALOG=4
             TOKEN_RADIUS_POPUP=4
             TOKEN_RADIUS_OSD=2
+            TOKEN_RADIUS_BUTTON=4
             ;;
         sharp)
             TOKEN_RADIUS_WINDOW=10
@@ -163,6 +186,22 @@ radius_preset_values() {
             TOKEN_RADIUS_DIALOG=6
             TOKEN_RADIUS_POPUP=6
             TOKEN_RADIUS_OSD=4
+            TOKEN_RADIUS_BUTTON=6
+            ;;
+        # Pinned to libadwaita's own shipped corners rather than bisected —
+        # see the RADIUS_PRESETS comment above. Quick Settings is not
+        # libadwaita's to have an opinion on (it is a shell surface, not a
+        # GTK4 one), so it keeps this row's place in the flat/sharp/soft
+        # ladder instead: between sharp's 10 and soft's 17.
+        adwaita)
+            TOKEN_RADIUS_WINDOW=12
+            TOKEN_RADIUS_MENU=12
+            TOKEN_RADIUS_QUICK_SETTINGS=18
+            TOKEN_RADIUS_NOTIFICATION=12
+            TOKEN_RADIUS_DIALOG=12
+            TOKEN_RADIUS_POPUP=12
+            TOKEN_RADIUS_OSD=12
+            TOKEN_RADIUS_BUTTON=6
             ;;
         soft)
             TOKEN_RADIUS_WINDOW=16
@@ -172,6 +211,7 @@ radius_preset_values() {
             TOKEN_RADIUS_DIALOG=10
             TOKEN_RADIUS_POPUP=10
             TOKEN_RADIUS_OSD=6
+            TOKEN_RADIUS_BUTTON=8
             ;;
         medium)
             TOKEN_RADIUS_WINDOW=22
@@ -181,6 +221,7 @@ radius_preset_values() {
             TOKEN_RADIUS_DIALOG=15
             TOKEN_RADIUS_POPUP=15
             TOKEN_RADIUS_OSD=9
+            TOKEN_RADIUS_BUTTON=10
             ;;
         default)
             TOKEN_RADIUS_WINDOW=30
@@ -190,6 +231,7 @@ radius_preset_values() {
             TOKEN_RADIUS_DIALOG=20
             TOKEN_RADIUS_POPUP=20
             TOKEN_RADIUS_OSD=12
+            TOKEN_RADIUS_BUTTON=9999
             ;;
         rounded)
             TOKEN_RADIUS_WINDOW=38
@@ -199,16 +241,38 @@ radius_preset_values() {
             TOKEN_RADIUS_DIALOG=26
             TOKEN_RADIUS_POPUP=26
             TOKEN_RADIUS_OSD=16
+            TOKEN_RADIUS_BUTTON=9999
             ;;
         # Retired, and still answered. It was a --radius-preset people ran, and
         # the memo it wrote in $CONF_DIR is read back by every later flagless
         # install — so removing the name outright would fail those runs at
         # `unknown --radius-preset` rather than quietly doing the old thing.
-        # It resolves to the row that is now the ceiling.
+        # Which row it resolves to is radius_preset_canonical's answer, not a
+        # second copy of it.
         pill)
-            radius_preset_values rounded
+            radius_preset_values "$(radius_preset_canonical pill)"
             ;;
         *)  return 1 ;;
+    esac
+}
+
+# What a preset name resolves to — itself for every current row, and the row
+# that replaced it for a retired one.
+#
+# One place names the mapping, because two would eventually disagree: this is
+# what radius_preset_values() reads to answer `pill`, and what apply_radius_css
+# writes the memo at. A memo used to be written at whatever name was typed, so a
+# machine that installed `pill` kept saying `pill` for good and every later
+# reader had to know a name that no longer names a row. It now records the row.
+# RADIUS_PRESET_ALIASES in gui/aura_glass_settings.py is this same map for the
+# settings window, which reads that memo directly.
+#
+# `custom` and anything unknown come back unchanged: this resolves names, it
+# does not validate them — radius_preset_values() is what rejects a typo.
+radius_preset_canonical() {
+    case "${1:-}" in
+        pill) printf 'rounded\n' ;;
+        *)    printf '%s\n' "${1:-}" ;;
     esac
 }
 
@@ -231,6 +295,10 @@ radius_bounds() {
     RADIUS_MIN_DIALOG=4;           RADIUS_MAX_DIALOG=26
     RADIUS_MIN_POPUP=4;            RADIUS_MAX_POPUP=26
     RADIUS_MIN_OSD=2;              RADIUS_MAX_OSD=16
+    # 9999 rather than a pixel ceiling: that is the sentinel `default` and
+    # `rounded` both ship (see TOKEN_RADIUS_BUTTON above), and a bound lower
+    # than it would make the shipped value itself unreachable by hand.
+    RADIUS_MIN_BUTTON=4;           RADIUS_MAX_BUTTON=9999
 }
 
 # The `default` row and the literals above are the same numbers written twice,
@@ -239,7 +307,8 @@ radius_bounds() {
 radius_preset_matches_shipped() {
     local w="$TOKEN_RADIUS_WINDOW" m="$TOKEN_RADIUS_MENU" \
           q="$TOKEN_RADIUS_QUICK_SETTINGS" n="$TOKEN_RADIUS_NOTIFICATION" \
-          d="$TOKEN_RADIUS_DIALOG" p="$TOKEN_RADIUS_POPUP" o="$TOKEN_RADIUS_OSD"
+          d="$TOKEN_RADIUS_DIALOG" p="$TOKEN_RADIUS_POPUP" o="$TOKEN_RADIUS_OSD" \
+          b="$TOKEN_RADIUS_BUTTON"
     radius_preset_values default
     local rc=0
     [ "$w" = "$TOKEN_RADIUS_WINDOW" ] || rc=1
@@ -249,10 +318,12 @@ radius_preset_matches_shipped() {
     [ "$d" = "$TOKEN_RADIUS_DIALOG" ] || rc=1
     [ "$p" = "$TOKEN_RADIUS_POPUP" ] || rc=1
     [ "$o" = "$TOKEN_RADIUS_OSD" ] || rc=1
+    [ "$b" = "$TOKEN_RADIUS_BUTTON" ] || rc=1
     # Leave the shipped values standing whatever the answer was.
     TOKEN_RADIUS_WINDOW="$w"; TOKEN_RADIUS_MENU="$m"
     TOKEN_RADIUS_QUICK_SETTINGS="$q"; TOKEN_RADIUS_NOTIFICATION="$n"
     TOKEN_RADIUS_DIALOG="$d"; TOKEN_RADIUS_POPUP="$p"; TOKEN_RADIUS_OSD="$o"
+    TOKEN_RADIUS_BUTTON="$b"
     return $rc
 }
 
