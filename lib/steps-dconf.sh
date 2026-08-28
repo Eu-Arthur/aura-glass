@@ -50,7 +50,9 @@ load_dconf() {
 
     apply_grain
     apply_blur_strength
+    apply_popup_brightness
     apply_popup_blur
+    apply_notification_blur
     apply_app_blur
     apply_app_opacity
     apply_radius_dconf
@@ -509,6 +511,85 @@ apply_popup_blur() {
     fi
 }
 
+# Notification banners and the history cards in the date menu, gated by the
+# patched popup component's own `notification` key — independent of
+# popup/blur, the same way this project's --popup-blur and
+# --notification-blur flags are independent of each other. static-blur and
+# rounded-blur-found stay apply_popup_blur's business: they are settings on
+# the popup component as a whole, not on this surface alone, and the popup
+# blur switch already decides them whenever it runs.
+apply_notification_blur() {
+    local base=/org/gnome/shell/extensions/blur-my-shell
+    local want="${WANT_NOTIFICATION_BLUR:-1}" memo="$CONF_DIR/notification-blur"
+
+    # Same reasoning as apply_popup_blur: --no-blur turns this off as a
+    # consequence of turning everything off, not a real choice to remember,
+    # so solid mode neither reads nor writes the memo.
+    if [ "${WANT_BLUR:-1}" != 1 ]; then
+        run dconf write "$base/popup/notification" false
+        skip "notification blur off with the rest of it (--no-blur)"
+        return 0
+    fi
+
+    if [ -z "${NOTIFICATION_BLUR_EXPLICIT:-}" ] && [ -r "$memo" ]; then
+        want="$(cat "$memo" 2>/dev/null || true)"
+        want="${want:-1}"
+    fi
+
+    if remembering; then
+        mkdir -p "$CONF_DIR"
+        printf '%s\n' "$want" > "$memo"
+    fi
+
+    if [ "$want" != 1 ]; then
+        run dconf write "$base/popup/notification" false
+        skip "notification blur off — banners and history cards keep the flat look"
+        return 0
+    fi
+
+    run dconf write "$base/popup/notification" true
+    ok "notification blur on — banners and history cards blur independently"
+    clear_openbar_notification_override
+}
+
+# Open Bar generates a stylesheet of its own into
+# $XDG_RUNTIME_DIR/io.github.neuromorph.openbar/stylesheet.css, and its "apply
+# to menus and notifications" switch puts a
+# `.notification-banner { background-color: ... !important }` into it. St loads
+# every extension stylesheet after the user theme and settles a tie by load
+# order rather than by weight, so that one rule outranks this project's banner
+# fill however it is written — !important does not reach it, and neither does
+# raising the selector to `.notification-banner.message`. The banner then sits
+# at Open Bar's own menu opacity, 0.92 out of the box, and the blur behind it
+# survives only in the margin ring outside the fill: a banner that reads as a
+# flat slab while the history cards, which match .message and never
+# .notification-banner, blur correctly and make it look like a bug in here.
+#
+# The switch gates exactly one block of Open Bar's sheet — the banner, the
+# notification buttons and the summary counter — so clearing it costs that
+# override and nothing else of Open Bar's look. It only runs on the path that
+# has just turned notification blur on; turning blur off again leaves the
+# switch alone rather than restoring an override the user may not want back.
+clear_openbar_notification_override() {
+    local u=openbar@neuromorph
+    local key=/org/gnome/shell/extensions/openbar/apply-menu-notif
+
+    [ -d "$EXT_DIR/$u" ] || return 0
+    [ "$(dconf read "$key" 2>/dev/null || true)" = true ] || return 0
+
+    run dconf write "$key" false
+
+    # Open Bar rewrites that sheet when it starts rather than on every key it
+    # owns, so the file on disk keeps the banner rule until the extension is
+    # cycled — and cycling is only meaningful while it is actually running.
+    if gnome-extensions info "$u" 2>/dev/null | grep -q 'State: ACTIVE'; then
+        run gnome-extensions disable "$u" 2>/dev/null || true
+        run gnome-extensions enable "$u" 2>/dev/null || true
+    fi
+
+    ok "Open Bar's notification styling switched off — its banner fill outranked the blur"
+}
+
 # Custom OSD keeps a set of named profiles beside the live settings, and its
 # preferences window overwrites the live settings with the active profile the
 # moment one is picked from the list. The preset above only writes the live
@@ -618,6 +699,70 @@ PY
 #
 # Remembered, like the grain beside it: dconf load puts the shipped sigmas back
 # on every run, so an unremembered choice would last until the next install.
+# How bright the blur behind menus, Quick Settings and notification banners
+# comes out, as a percentage of the backdrop it is blurring. 100% is the
+# backdrop's own brightness; under that the blur darkens what is behind it, over
+# it the blur lifts it.
+#
+# One number for every popup surface, and it has to be, because Blur My Shell
+# gives the whole popup component one pipeline — settings.popup.PIPELINE in
+# components/popup/static_actor.js is read once and handed to every surface the
+# component makes. A banner cannot be brightened without the date menu and the
+# quick-toggle menus coming with it, and a control that implied otherwise would
+# be lying about what it moves.
+#
+# Both places the number lives are written, for the same reason
+# apply_blur_strength writes two: the per-component `brightness` key is what the
+# older releases read, and the `pipelines` blob is what the current ones read.
+# The pipeline is found by the name the popup component actually points at
+# rather than by a hard-coded id, so renaming or repointing it in dconf/core.ini
+# does not silently turn this into a no-op.
+#
+# Runs after apply_blur_strength, which rewrites the same blob. That one only
+# touches `unscaled_radius` and this one only touches `brightness`, so the order
+# between them is not load-bearing — but keeping them adjacent is, because
+# anything that resets the blob wholesale has to come before both.
+#
+# Remembered, like the strength above it: dconf load puts the shipped brightness
+# back on every run.
+POPUP_BRIGHTNESS_MIN=50
+POPUP_BRIGHTNESS_MAX=150
+
+apply_popup_brightness() {
+    local want="${POPUP_BRIGHTNESS:-}" memo="$CONF_DIR/popup-brightness"
+    if [ -z "$want" ] && [ -f "$memo" ]; then
+        want="$(cat "$memo" 2>/dev/null || true)"
+    fi
+    [ -n "$want" ] || return 0
+
+    case "$want" in
+        ''|*[!0-9]*) warn "--popup-brightness wants a whole percentage, got '$want'"
+                     return 0 ;;
+    esac
+    if [ "$want" -lt "$POPUP_BRIGHTNESS_MIN" ] || [ "$want" -gt "$POPUP_BRIGHTNESS_MAX" ]; then
+        warn "--popup-brightness $want is outside ${POPUP_BRIGHTNESS_MIN}-${POPUP_BRIGHTNESS_MAX} — leaving the popup blur alone"
+        return 0
+    fi
+
+    if [ "${DRY_RUN:-0}" = 1 ]; then
+        info "dry-run: light the popup blur at ${want}%"
+        return 0
+    fi
+
+    local base=/org/gnome/shell/extensions/blur-my-shell
+    run dconf write "$base/popup/brightness" \
+        "$(awk -v p="$want" 'BEGIN { printf "%.2f", p / 100 }')"
+
+    python3 "$REPO_ROOT/tools/apply-popup-brightness.py" "$want" \
+        || { warn "could not light the popup blur"; return 0; }
+
+    if remembering; then
+        mkdir -p "$CONF_DIR"
+        printf '%s\n' "$want" > "$memo"
+    fi
+    ok "popup blur lit at ${want}% (remembered for later runs)"
+}
+
 BLUR_STRENGTH_MIN=25
 BLUR_STRENGTH_MAX=200
 

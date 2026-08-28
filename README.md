@@ -44,7 +44,7 @@ Installing also puts an **Aura Glass** entry in your Activities overview (or run
 
 - 🎨 **Accent color**, with a shortcut to GNOME's own `Settings → Appearance`
 - ⬜ **Corner rounding** — seven presets, each drawn as a little window carrying its own corners so you can see the difference before you pick it (one of them, `adwaita`, pinned to libadwaita's own shipped corners rather than this project's), a **Reset to default** beside them, or set each of the eight surfaces yourself: windows, menus, Quick Settings, notifications, dialogs, popups, the volume pill and buttons — buttons alone with a **Pill-shaped** switch, since 9999px is a shape rather than a number — each bounded to a range that has been looked at on a screen, with a live drawing of whichever surface you are pointing at, at the value you are setting
-- 🪟 **Frosted glass / solid mode**, a standalone **blur behind every window** switch, and popup blur — with what the blur costs your GPU and CPU said at the top of the page rather than buried in a subtitle
+- 🪟 **Frosted glass / solid mode**, a standalone **blur behind every window** switch, popup blur, and a separate **notification blur** *(beta)* — banners as they arrive and the cards in the date menu, on or off independently of the menus themselves — with what the blur costs your GPU and CPU said at the top of the page rather than buried in a subtitle
 - 🎚️ **Window transparency bar** — anywhere from 70% to 100%, with the three tuned levels marked
 - 🎨 **Tint** — the colour under the glass, picked separately for app windows and for the shell or linked to one colour, with a preview window of real surfaces and real text that recolours as you drag
 - 🌫️ **Blur amount** — one bar for every blurred surface at once, from a quarter of the tuned radii to double them
@@ -113,11 +113,13 @@ For scripted setups or power users who prefer flags instead of the interactive w
 | `--app-tint-color HEX` | The colour a translucent app window is darkened toward under its opacity, e.g. `#101820`. How dark it stays is `--app-transparency`'s question; this is only what colour it is *(default `#000000`, remembered across runs)*. |
 | `--shell-tint-color HEX` | The same for the panel, menus, Quick Settings, notifications and dialogs. Each shell surface keeps its own lightness and takes the colour's hue, so a tint cannot change how readable the text on it is *(default `#000000`, remembered across runs)*. |
 | `--blur-strength P` | How far every blur reaches, as a percentage of the tuned radii: `25`–`200`. Scales the whole set together — panel, menus, overview, windows, lock screen — rather than flattening them *(default `100`, remembered across runs)*. |
+| `--popup-brightness P` | How bright the blur behind menus, Quick Settings and notification banners comes out, as a percentage of the backdrop: `50`–`150`. `100` is the backdrop's own light; under it the blur darkens, over it the blur lifts. Blur My Shell gives the popup component one pipeline, so all three move together *(default `115`, remembered across runs)*. |
+| `--notification-opacity P` | How much ground an arriving banner paints over that blur: `10`–`85`. Hover and pressed step up from wherever this lands, so the ladder holds *(default `40`, remembered across runs)*. |
 | `--window-opacity LEVEL` | Alias for `--app-transparency` (e.g. `--window-opacity 90%`). |
 | `--titlebar-button-style STYLE` | Titlebar button look: `minimal` (default, no disc until hover), `adwaita` (always-visible neutral disc), `material` (solid discs, close filled red) or `flat` (glyph only, no disc ever). Remembered across runs. |
 | `--gdm` | Theme the GDM login screen with matching blurred style *(requires `sudo`)*. |
 | `--gdm-background PATH` | Custom image for the GDM login background *(defaults to your wallpaper)*. |
-| `--glass-mode M` | Pick the whole look in one flag: `frosted` (blur behind windows and popups, the default), `transparent` (translucent windows, no window blur) or `solid` (the theme stands down entirely). Remembered across runs, and each mode keeps its own opacity, tint, blur strength and popup blur *(see details below)*. |
+| `--glass-mode M` | Pick the whole look in one flag: `frosted` (blur behind windows and popups, the default), `transparent` (translucent windows, no window blur) or `solid` (the theme stands down entirely). Remembered across runs, and each mode keeps its own opacity, tint, blur strength, popup blur and notification blur *(see details below)*. |
 | `--no-blur` | Opaque surfaces with identical geometry, still fully themed; saves ~30% GPU overhead for low-power laptops. Not the same as `--glass-mode solid` *(see details below)*. |
 | `--extras` / `--recommended` | Install the recommended reference extension suite. |
 | `--all-extras` | Install all 14 optional extensions. |
@@ -128,6 +130,7 @@ For scripted setups or power users who prefer flags instead of the interactive w
 | `--cursor-size PX` | Pointer size in pixels, 16-128 (20 recommended for the packs above). Left alone unless given, independent of `--cursors` — a `--no-cursors` choice to keep your own theme is not a choice about size. Remembered across runs. |
 | `--font WHICH` | Interface font: `system` (default — GNOME's own font, left alone), `misans`, `inter` or `sf-pro`. The font is downloaded into `~/.local/share/fonts/aura-glass` if it is not already on the machine, then set as the interface, document and titlebar font at whatever size those keys already carry. `--font system` puts back the font from before aura-glass first ran here. Remembered across runs. |
 | `--no-popup-blur` | Use flat translucent popups without background blur. |
+| `--no-notification-blur` | Keep notification banners and the history cards in the date menu flat, independently of `--popup-blur`. Notification blur is **beta**: it is on by default, and this is the switch that takes it back off. |
 | `--no-osd` | Keep GNOME's stock volume/brightness popup. |
 | `--no-icons` / `--no-cursors` | Leave your icons or pointer alone — no pack installed and the `icon-theme` / `cursor-theme` key never written, so a choice made in GNOME Tweaks or anywhere else stands. Remembered across runs, so later runs leave it alone too. |
 | `--dry-run`, `-n` | Print what would happen without modifying anything. |
@@ -183,9 +186,9 @@ One flag picks the whole look, and the choice is remembered, so a later flagless
 - **`transparent`** — translucent windows with no blur behind them, so the wallpaper shows through directly. Popup blur stays on. Because there is no blurred window under the text, this mode starts darker (82%) rather than inheriting frosted's level.
 - **`solid`** — the theme stands down rather than merely losing its blur: the stylesheets come back out, the shell and GTK themes go back to GNOME's stock ones, and this project's extensions are switched off **with their own settings left untouched**. Your icon and cursor packs and your accent colour stay, since those are your preferences and not this theme's styling. Nothing is uninstalled and nothing is forgotten — switching back to `frosted` or `transparent` restores exactly what was there.
 
-Each mode keeps its own drawer of tuning — opacity, app and shell tint, blur strength, popup blur — so moving between them does not make you re-dial anything, and moving back returns the settings that mode was wearing.
+Each mode keeps its own drawer of tuning — opacity, app and shell tint, blur strength, popup blur, notification blur — so moving between them does not make you re-dial anything, and moving back returns the settings that mode was wearing.
 
-Because `solid` removes the styling itself, it refuses flags that would have nothing left to act on: `--glass-mode solid --blur`, `--popup-blur`, `--window-blur` or a non-zero `--app-transparency` each stop the run rather than being silently discarded.
+Because `solid` removes the styling itself, it refuses flags that would have nothing left to act on: `--glass-mode solid --blur`, `--popup-blur`, `--notification-blur`, `--window-blur` or a non-zero `--app-transparency` each stop the run rather than being silently discarded.
 
 #### Battery & low-power mode (`--no-blur`)
 Blur effects require continuous multi-pass Gaussian shader computations. If you are on battery or using an Intel/AMD iGPU:

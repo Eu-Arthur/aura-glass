@@ -1,0 +1,510 @@
+diff --git a/schemas/org.gnome.shell.extensions.blur-my-shell.gschema.xml b/schemas/org.gnome.shell.extensions.blur-my-shell.gschema.xml
+index 33ead9a..d387f32 100644
+--- a/schemas/org.gnome.shell.extensions.blur-my-shell.gschema.xml
++++ b/schemas/org.gnome.shell.extensions.blur-my-shell.gschema.xml
+@@ -617,6 +617,11 @@
+             <default>true</default>
+             <summary>Boolean, whether to blur popup menus, notifications, switchers, and dialogs or not</summary>
+         </key>
++        <!-- NOTIFICATION -->
++        <key type="b" name="notification">
++            <default>true</default>
++            <summary>Boolean, whether to blur notification banners and the notification list, independently of the popup menu blur</summary>
++        </key>
+         <!-- STATIC BLUR -->
+         <key type="b" name="static-blur">
+             <default>false</default>
+diff --git a/src/components/popup/blur_surface.js b/src/components/popup/blur_surface.js
+index 4c3e5e7..4ca671d 100644
+--- a/src/components/popup/blur_surface.js
++++ b/src/components/popup/blur_surface.js
+@@ -12,6 +12,17 @@ import { PopupBlurSurfaceTransitions } from './surface_transitions.js';
+ import { PopupBlurStaticActor } from './static_actor.js';
+ 
+ const NOTIFICATION_STYLE_CLASSES = ['notification-banner'];
++// How many consecutive frames a notification surface may report invalid
++// geometry before it is hidden rather than retried. An actor animating in
++// needs only a frame or two; anything past this never allocates at all, and
++// retrying it forever would spin a later on every redraw.
++const MAX_PENDING_ALLOCATION_FRAMES = 8;
++
++const DIRECT_UPDATE_STYLE_CLASSES = [
++    'datemenu-popover', 'modal-dialog', 'quick-settings',
++    'notification-banner',
++];
++
+ const FULL_GEOMETRY_STYLE_CLASSES = [
+     'popup-menu-content', 'candidate-popup-content',
+     'quick-settings', 'quick-toggle-menu',
+@@ -45,6 +56,8 @@ export const PopupBlurSurface = class PopupBlurSurface {
+         this.actor_destroyed = false;
+         this.blur_actor_destroyed = false;
+         this.destroyed = false;
++        this.pending_allocation_frames = 0;
++        this.was_transitioning = false;
+     }
+ 
+     enable() {
+@@ -155,9 +168,16 @@ export const PopupBlurSurface = class PopupBlurSurface {
+         return sibling_index >= 0 && actor_index < sibling_index;
+     }
+     
++    // Surfaces listed here update straight off each geometry signal instead of
++    // being coalesced onto an idle later. Notifications belong here for the
++    // same reason the dialogs do: while one animates in, allocation, position,
++    // size and opacity all change in a burst, and the coalescing path clears
++    // the pending idle on every one of them -- so the signal that would have
++    // revived an unallocated surface kept cancelling itself, and the idle sits
++    // below the BEFORE_REDRAW priority the update runs at anyway.
+     is_excluded_from_deferring_surface() {
+-        return this.style.has_any_style_class(this.target, ['datemenu-popover','modal-dialog','quick-settings'])
+-            || this.style.has_any_style_class(this.root_actor, ['datemenu-popover','modal-dialog','quick-settings']);
++        return this.style.has_any_style_class(this.target, DIRECT_UPDATE_STYLE_CLASSES)
++            || this.style.has_any_style_class(this.root_actor, DIRECT_UPDATE_STYLE_CLASSES);
+     }
+ 
+     update() {
+@@ -215,13 +235,42 @@ export const PopupBlurSurface = class PopupBlurSurface {
+ 
+     update_live_surface() {
+         if (!this.is_visible()) {
++            this.pending_allocation_frames = 0;
++            this.was_transitioning = false;
+             this.hide_surface();
+             return;
+         }
+         this.set_actor_position();
+         const geometry = this.placement.get_unclipped_monitor_surface_geometry();
+-        if (!this.placement.has_valid_geometry(geometry))
+-            return this.hide_surface();
++        if (!this.placement.has_valid_geometry(geometry)) {
++            // A banner or a card is measured while it is still animating in,
++            // and for the first frames of that animation it has no allocation
++            // yet, so the geometry comes back invalid. Hiding on that is what
++            // left the widget parented but never sized -- the "needs an
++            // allocation" case. Only a surface that is genuinely off the
++            // monitor is hidden outright; one that is merely unallocated is
++            // retried on the next frame, which is when the allocation lands.
++            if (this.placement.offscreen) {
++                this.pending_allocation_frames = 0;
++                return this.hide_surface();
++            }
++
++            this.pending_allocation_frames = (this.pending_allocation_frames ?? 0) + 1;
++            if (this.pending_allocation_frames > MAX_PENDING_ALLOCATION_FRAMES) {
++                this.pending_allocation_frames = 0;
++                return this.hide_surface();
++            }
++
++            // queue_update() no-ops while a transition later is already
++            // armed, and that later re-runs update() by itself, so the retry
++            // only has to be queued when nothing else will come back.
++            if (!this.transition_update_id)
++                this.queue_update();
++
++            return;
++        }
++
++        this.pending_allocation_frames = 0;
+         if (!this.placement.update_surface_geometry(geometry))
+             return;
+         if (!this.placement.prepare_visible_geometry())
+@@ -232,6 +281,22 @@ export const PopupBlurSurface = class PopupBlurSurface {
+             this.hide_actors();
+         this.queue_repaint();
+         this.queue_transition_update();
++
++        // A notification arrives on a tween the message tray runs against its
++        // banner bin -- opacity 0 to 255 over 200ms -- and this surface never
++        // sees the end of it. Every notify::opacity the bin emits while a
++        // transition later is already armed is dropped, because queue_update()
++        // declines in exactly that case, and the re-arm loop above stops the
++        // moment the tween is gone. So the last pass that runs is one that
++        // still saw the tween in flight, and the surface is left a few steps
++        // short of the opacity the banner settles on: the banner that arrives
++        // washed out and only sharpens when some later event -- a hover --
++        // happens to drive one more pass. This is that pass, run once, on the
++        // first update that finds the tween finished and the values final.
++        const transitions_running = this.transitions.has_running();
++        if (this.was_transitioning && !transitions_running)
++            this.queue_update();
++        this.was_transitioning = transitions_running;
+     }
+ 
+     hide_surface() {
+diff --git a/src/components/popup/index.js b/src/components/popup/index.js
+index ad7952c..509ac91 100644
+--- a/src/components/popup/index.js
++++ b/src/components/popup/index.js
+@@ -25,7 +25,7 @@ export const PopupBlur = class PopupBlur {
+         this.watched_actors = new WeakSet();
+         this.destroyed_actors = new WeakSet();
+         this.interface_settings = new Gio.Settings({ schema_id: 'org.gnome.desktop.interface' });
+-        this.message_stacks = new PopupBlurMessageStacks(connections);
++        this.message_stacks = new PopupBlurMessageStacks(connections, settings);
+         this.targets = new PopupBlurTargets(this);
+         this.queue_id = 0;
+         this.follow_up_queue_id = 0;
+@@ -425,7 +425,7 @@ export const PopupBlur = class PopupBlur {
+         this.reset_id = GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+             this.reset_id = 0;
+ 
+-            if (this.settings.popup.BLUR)
++            if (this.settings.popup.BLUR || this.settings.popup.NOTIFICATION)
+                 this.enable();
+ 
+             return GLib.SOURCE_REMOVE;
+@@ -434,6 +434,10 @@ export const PopupBlur = class PopupBlur {
+ 
+     update_pipeline() {
+         this.surfaces.forEach(surface => surface.update_pipeline());
++        // The history cards are blurred by an effect on each card rather than
++        // by one of those surfaces, so they are not in that list -- see
++        // attach_blur() in message_stacks.js.
++        this.message_stacks.update_blur_all();
+     }
+ 
+     update_background() {
+diff --git a/src/components/popup/message_stacks.js b/src/components/popup/message_stacks.js
+index 358439b..f5e4e50 100644
+--- a/src/components/popup/message_stacks.js
++++ b/src/components/popup/message_stacks.js
+@@ -1,13 +1,21 @@
+ import GLib from 'gi://GLib';
++import { NativeDynamicBlurEffect } from '../../effects/native_dynamic_gaussian_blur.js';
+ 
+ const STACKED_PSEUDO_CLASSES = ['second-in-stack', 'lower-in-stack'];
+ const MESSAGE_CONTAINER_STYLE_CLASSES = ['message-list', 'message-view', 'message-notification-group'];
+ const INTERNAL_STYLE_CLASSES = ['bms-popup-blurred-widget', 'bms-popup-backgroundgroup'];
+ const INTERNAL_NAMES = ['bms-popup-blurred-widget', 'bms-popup-backgroundgroup'];
++const MESSAGE_BLUR_EFFECT_NAME = 'aura-glass-message-blur';
++// The banner is a NotificationMessage too, and it already has a blur surface
++// of its own in the message tray's banner bin. Two blurs on one actor is two
++// passes over the same pixels, so the surface keeps the banner and this keeps
++// the history cards.
++const BLUR_EXCLUDED_STYLE_CLASSES = ['notification-banner'];
+ 
+ export const PopupBlurMessageStacks = class PopupBlurMessageStacks {
+-    constructor(connections) {
++    constructor(connections, settings = null) {
+         this.connections = connections;
++        this.settings = settings;
+         this.containers = new Set();
+         this.groups = new Set();
+         this.messages = new Set();
+@@ -85,6 +93,7 @@ export const PopupBlurMessageStacks = class PopupBlurMessageStacks {
+ 
+         this.messages.add(message);
+         this.update_message(message);
++        this.attach_blur(message);
+ 
+         this.connect(
+             message,
+@@ -103,12 +112,96 @@ export const PopupBlurMessageStacks = class PopupBlurMessageStacks {
+             'destroy',
+             () => {
+                 this.cancel_update(message);
++                // No detach_blur() here. remove_effect_by_name() checks the
++                // effect meta's own actor back-pointer, not just whether the
++                // meta is still in the actor's effect list -- and Clutter's
++                // own dispose clears that back-pointer while tearing down an
++                // actor's effects, before the JS-visible 'destroy' signal is
++                // ever dispatched to this handler. get_effect() still finds
++                // the meta (so a guard here would not help) but the actor it
++                // points to is already gone, which is exactly what produced
++                // "The meta of type 'NativeDynamicBlurEffect' ... is not
++                // attached to the actor" warnings from here. The actor being
++                // destroyed has already had its effects torn down regardless
++                // of anything this class does, so there is nothing left to
++                // detach.
+                 this.restore_message(message);
+                 this.messages.delete(message);
+             }
+         );
+     }
+ 
++    // A history card gets its blur from an effect on the card itself, not from
++    // a blur actor beside it.
++    //
++    // GNOME's NotificationMessageGroup addresses its children by index --
++    // MessageGroupExpanderLayout runs `const [top, cover, ...stack] =
++    // container.get_children()` and then `stack.pop()` for the header,
++    // _ensureCoverPosition() pins the cover to index 1, _addNotification()
++    // offsets its insert index "to skip the cover child", and collapse() takes
++    // `get_first_child().child`. Any actor parented beside a card shifts every
++    // one of those by one, and the real NotificationMessage is then never
++    // allocated: the cards paint at stale boxes and land on top of each other.
++    // The card wrapper is an St.Bin and .message itself is an St.Button, so
++    // there is no room inside either to hide an actor in.
++    //
++    // An effect adds no child, so none of that math can see it, and the blur
++    // follows the card's own allocation through scrolling, stacking, expand
++    // and collapse without any geometry code of its own.
++    //
++    // BACKGROUND mode blurs what has already been painted behind the card,
++    // which inside the calendar popover is the popover's own blur surface and
++    // fill -- a second pass over an already-blurred ground, which is the
++    // frosted-card-on-frosted-glass look this is for. Brightness is left at 1
++    // for that reason: the popover has already applied the popup brightness
++    // once, and applying it again washes the cards out.
++    attach_blur(message) {
++        if (!this.settings?.popup?.NOTIFICATION)
++            return;
++        // Without gnome-rounded-blur the effect cannot round its corners, and a
++        // square blur patch behind a 20px-rounded card is worse than no blur at
++        // all -- the cards fall back to riding the popover's surface.
++        if (!NativeDynamicBlurEffect?.supports_corner_radius)
++            return;
++        if (this.has_any_style_class(message, BLUR_EXCLUDED_STYLE_CLASSES))
++            return;
++
++        try {
++            if (message.get_effect(MESSAGE_BLUR_EFFECT_NAME))
++                return;
++
++            const effect = new NativeDynamicBlurEffect({
++                unscaled_radius: this.settings.popup.SIGMA,
++                brightness: 1.0,
++                unscaled_corner_radius: this.settings.popup.NOTIFICATION_CORNER_RADIUS,
++            });
++            message.add_effect_with_name(MESSAGE_BLUR_EFFECT_NAME, effect);
++        } catch (e) { }
++    }
++
++    detach_blur(message) {
++        try {
++            // remove_effect_by_name() logs a GLib warning (not a JS exception,
++            // so try/catch cannot swallow it) when the named effect is not
++            // present -- and detach_blur() is called unconditionally on every
++            // tracked message, including banners and messages tracked while
++            // NOTIFICATION was off, neither of which attach_blur() ever gave
++            // the effect to. get_effect() returns null silently, so it is the
++            // check that keeps this quiet for those.
++            if (message.get_effect(MESSAGE_BLUR_EFFECT_NAME))
++                message.remove_effect_by_name(MESSAGE_BLUR_EFFECT_NAME);
++        } catch (e) { }
++    }
++
++    // Rebuilt rather than retuned, because the effect's radius and corner
++    // radius are both scaled against the theme scale factor when they are set.
++    update_blur_all() {
++        this.messages.forEach(message => {
++            this.detach_blur(message);
++            this.attach_blur(message);
++        });
++    }
++
+     track_group(group) {
+         if (!this.watch_actor(group) || this.groups.has(group))
+             return;
+@@ -329,7 +422,10 @@ export const PopupBlurMessageStacks = class PopupBlurMessageStacks {
+     disable() {
+         this.update_ids.forEach(id => GLib.source_remove(id));
+         this.update_ids.clear();
+-        this.messages.forEach(message => this.restore_message(message));
++        this.messages.forEach(message => {
++            this.detach_blur(message);
++            this.restore_message(message);
++        });
+         this.messages.clear();
+         this.groups.clear();
+         this.containers.clear();
+diff --git a/src/components/popup/surface_placement.js b/src/components/popup/surface_placement.js
+index fd8f4ce..fc4a163 100644
+--- a/src/components/popup/surface_placement.js
++++ b/src/components/popup/surface_placement.js
+@@ -256,6 +256,21 @@ export const PopupBlurSurfacePlacement = class PopupBlurSurfacePlacement {
+             return true;
+ 
+         this.ready = true;
++
++        // The first frame a surface has real geometry is skipped so the blur
++        // can be repainted against the content behind it before it is ever
++        // shown -- otherwise the first frame shows whatever the texture held.
++        //
++        // A notification does not get that grace. Its target is still
++        // animating in, so the requeued update often finds the geometry
++        // invalid again, and a few of those in a row spend the retry budget
++        // and hide the surface outright -- which is the banner that arrives
++        // solid, or blurred over only part of itself, and the one that turns
++        // solid again the moment a hover re-runs this path. The geometry it
++        // has is already correct, so it is used on this frame instead.
++        if (this.surface.is_notification_surface())
++            return true;
++
+         this.surface.opacity = 0;
+         this.surface.update_surface_opacity(0);
+         this.surface.hide_actors();
+@@ -325,9 +340,31 @@ export const PopupBlurSurfacePlacement = class PopupBlurSurfacePlacement {
+ 
+     hide() {
+         this.ready = false;
++        this.collapse_blur_actor();
+         this.clear();
+     }
+ 
++    // clear() drops the cached geometry but leaves the widget parented, and a
++    // parented StWidget that was never given a size is exactly what the
++    // "bms-popup-blurred-widget ... needs an allocation" warning is about: the
++    // stage still walks it every redraw and finds nothing to allocate. Hiding
++    // is not enough on its own, so the actor is collapsed to a 1x1 at the
++    // origin first -- a size the stage can allocate, and small enough that the
++    // hidden actor costs nothing until real geometry arrives.
++    collapse_blur_actor() {
++        try {
++            if (this.surface.static_blur)
++                return;
++
++            const actor = this.surface.blur_actor;
++            if (!actor)
++                return;
++
++            actor.set_position(0, 0);
++            actor.set_size(1, 1);
++        } catch (e) { }
++    }
++
+     clear() {
+         this.x = null;
+         this.y = null;
+diff --git a/src/components/popup/targets.js b/src/components/popup/targets.js
+index dbfb294..d683b5c 100644
+--- a/src/components/popup/targets.js
++++ b/src/components/popup/targets.js
+@@ -1,5 +1,14 @@
+ const POPUP_STYLE_CLASSES = ['popup-menu', 'quick-toggle-menu-container', 'candidate-popup-boxpointer'];
+-const POPUP_TARGET_STYLE_CLASSES = ['popup-menu-content', 'quick-settings', 'quick-toggle-menu', 'notification-banner', 'candidate-popup-content'];
++const POPUP_TARGET_STYLE_CLASSES = ['popup-menu-content', 'quick-settings', 'quick-toggle-menu', 'candidate-popup-content'];
++// Banners only. A history card inside the calendar popover is deliberately
++// not a blur target: GNOME's NotificationMessageGroup addresses its children
++// by index -- `const [top, cover, ...stack] = container.get_children()` in
++// MessageGroupExpanderLayout.vfunc_allocate, `set_child_at_index(cover, 1)`
++// in _ensureCoverPosition(), and the insert index _addNotification() offsets
++// "to skip the cover child" -- so a blur actor parented beside a card shifts
++// every one of those by one and the real NotificationMessage never gets
++// allocated. The cards ride the popover's own blur surface instead.
++const POPUP_NOTIFICATION_STYLE_CLASSES = ['notification-banner'];
+ const POPUP_CHILD_STYLE_CLASSES = ['osd-window', 'resize-popup', 'switcher-list', 'workspace-switcher', 'modal-dialog', 'run-dialog'];
+ const POPUP_DESCENDANT_TARGET_STYLE_CLASSES = ['switcher-list'];
+ 
+@@ -57,10 +66,10 @@ export const PopupBlurTargets = class PopupBlurTargets {
+                 return targets.actors;
+         }
+ 
+-        if (this.actor.watch_actor(delegate?.box) && this.has_any_style_class(delegate.box, POPUP_TARGET_STYLE_CLASSES))
++        if (this.actor.watch_actor(delegate?.box) && this.is_target_style(delegate.box))
+             this.add(targets, delegate.box);
+ 
+-        if (this.has_any_style_class(actor, POPUP_TARGET_STYLE_CLASSES))
++        if (this.is_target_style(actor))
+             this.add(targets, actor);
+ 
+         if (this.has_any_style_class(actor, POPUP_CHILD_STYLE_CLASSES))
+@@ -137,11 +146,27 @@ export const PopupBlurTargets = class PopupBlurTargets {
+ 
+     is_blur_target_actor(actor) {
+         return (
+-            this.has_any_style_class(actor, POPUP_TARGET_STYLE_CLASSES)
++            this.is_target_style(actor)
+             || this.has_any_style_class(actor, POPUP_CHILD_STYLE_CLASSES)
+         );
+     }
+ 
++    // The popup component covers two independent surfaces behind one enable
++    // switch each: menus/switchers/dialogs gated on settings.popup.BLUR, and
++    // notification banners/cards gated on settings.popup.NOTIFICATION. A
++    // style class in POPUP_TARGET_STYLE_CLASSES is only a real target while
++    // its own switch is on, so a menu-only or notification-only install
++    // blurs exactly the surfaces its setting names.
++    is_target_style(actor) {
++        if (this.has_any_style_class(actor, POPUP_TARGET_STYLE_CLASSES))
++            return !!this.actor.settings?.popup?.BLUR;
++
++        if (this.has_any_style_class(actor, POPUP_NOTIFICATION_STYLE_CLASSES))
++            return !!this.actor.settings?.popup?.NOTIFICATION;
++
++        return false;
++    }
++
+     get_corner_radius(target, root_actor) {
+         return POPUP_CORNER_RADII.find(radius =>
+             this.has_any_style_class(target, radius.style_classes)
+diff --git a/src/conveniences/keys.js b/src/conveniences/keys.js
+index 305f685..d829e6f 100644
+--- a/src/conveniences/keys.js
++++ b/src/conveniences/keys.js
+@@ -102,6 +102,7 @@ export const KEYS = [
+     {
+         component: "popup", schemas: [
+             { type: Type.B, name: "blur" },
++            { type: Type.B, name: "notification" },
+             { type: Type.B, name: "static-blur" },
+             { type: Type.S, name: "pipeline" },
+             { type: Type.I, name: "sigma" },
+diff --git a/src/extension.js b/src/extension.js
+index 863a7fe..1b570b2 100644
+--- a/src/extension.js
++++ b/src/extension.js
+@@ -330,7 +330,7 @@ export default class BlurMyShell extends Extension {
+         if (this._settings.screenshot.BLUR)
+             this._screenshot_blur.enable();
+ 
+-        if (this._settings.popup.BLUR)
++        if (this._settings.popup.BLUR || this._settings.popup.NOTIFICATION)
+             this._popup.enable();
+ 
+         this._log("all components enabled.");
+@@ -663,33 +663,47 @@ export default class BlurMyShell extends Extension {
+ 
+         // ---------- POPUP BLUR ----------
+ 
+-        // toggled on/off
++        // toggled on/off — menus/switchers/dialogs and notifications are
++        // independent switches over the same component, so it only fully
++        // disables once both are off.
+         this._settings.popup.BLUR_changed(() => {
+-            if (this._settings.popup.BLUR)
++            if (this._settings.popup.BLUR || this._settings.popup.NOTIFICATION)
+                 this._popup.enable();
+             else
+                 this._popup.disable();
+         });
+ 
++        this._settings.popup.NOTIFICATION_changed(() => {
++            if (this._settings.popup.BLUR || this._settings.popup.NOTIFICATION)
++                this._popup.enable();
++            else
++                this._popup.disable();
++
++            // Re-targets every already-blurred actor so a flip of this
++            // switch adds or drops the notification surfaces without
++            // touching the menus/dialogs already blurred.
++            this._popup.reset();
++        });
++
+         this._settings.popup.STATIC_BLUR_changed(() => {
+-            if (this._settings.popup.BLUR)
++            if (this._settings.popup.BLUR || this._settings.popup.NOTIFICATION)
+                 this._popup.reset();
+         });
+ 
+         this._settings.popup.PIPELINE_changed(() => {
+-            if (this._settings.popup.BLUR)
++            if (this._settings.popup.BLUR || this._settings.popup.NOTIFICATION)
+                 this._popup.update_pipeline();
+         });
+ 
+         // popup background override toggled on/off
+         this._settings.popup.OVERRIDE_BACKGROUND_changed(() => {
+-            if (this._settings.popup.BLUR)
++            if (this._settings.popup.BLUR || this._settings.popup.NOTIFICATION)
+                 this._popup.update_background();
+         });
+ 
+         // popup background style changed
+         this._settings.popup.STYLE_POPUP_changed(() => {
+-            if (this._settings.popup.BLUR)
++            if (this._settings.popup.BLUR || this._settings.popup.NOTIFICATION)
+                 this._popup.update_background();
+         });
+     }

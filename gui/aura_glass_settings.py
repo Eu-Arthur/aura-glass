@@ -225,6 +225,32 @@ OPACITY_SUBTITLE = ("Lower is more see-through. 70% is the floor — below it, "
 # identical on both tabs.
 POPUP_BLUR_SUBTITLE = "Popups, Quick Settings and the panel"
 
+# Same reason again: the notification-blur switch's title and subtitle are
+# identical on both tabs. Independent of POPUP_BLUR_SUBTITLE's switch — this
+# one covers banners as they arrive and the cards in the date menu, whether or
+# not popups themselves are blurred.
+#
+# The badge rides in the title rather than in a suffix pill. A suffix on an
+# Adw.SwitchRow is right-aligned against the switch, which puts it a whole row
+# away from the words it qualifies on a wide window; inline it sits against the
+# label it is about. Pango's alpha is used rather than a colour so the badge
+# takes the label's own foreground and stays right in both light and dark —
+# a hardcoded hex would be legible in one and wrong in the other.
+NOTIFICATION_BLUR_TITLE = ('Blur behind notifications '
+                           '<span size="x-small" weight="bold" alpha="55%">'
+                           'BETA</span>')
+
+# What the badge is promising, in the subtitle, because a badge on its own only
+# tells you to be careful without saying of what. The cards are the fragile
+# half: they are blurred through GNOME's own notification group, whose child
+# layout this leans on and which moves between shell releases — so the failure
+# it is warning about is a visible one, and the switch beside it is the undo.
+NOTIFICATION_BLUR_SUBTITLE = ("Banners as they arrive and the cards in the "
+                              "date menu, blurred whether or not menus are. "
+                              "Beta — the cards lean on GNOME's own "
+                              "notification layout, which shifts between "
+                              "releases; turn this off if they look wrong")
+
 # --blur-strength scales every blur radius at once. The bounds are
 # BLUR_STRENGTH_MIN and BLUR_STRENGTH_MAX in lib/steps-dconf.sh, which is where
 # the reasoning for them is; 100 is the tuned set and the default.
@@ -240,6 +266,39 @@ BLUR_STRENGTH_MARKS = [
 ]
 
 BLUR_STRENGTH_SNAP = 4
+
+# --popup-brightness lights the blur behind menus, Quick Settings and
+# notification banners. The bounds are POPUP_BRIGHTNESS_MIN and
+# POPUP_BRIGHTNESS_MAX in lib/steps-dconf.sh, which is where the reasoning for
+# them is; 115 is what dconf/core.ini ships and the default here.
+POPUP_BRIGHTNESS_MIN = 50
+POPUP_BRIGHTNESS_MAX = 150
+POPUP_BRIGHTNESS_DEFAULT = 115
+
+# Marks on that bar. 100 is the backdrop's own brightness, so it is the one
+# labelled point that is not a look but a fact about the blur.
+POPUP_BRIGHTNESS_MARKS = [
+    (70, "dim"),
+    (100, "as-is"),
+    (130, "lit"),
+]
+
+POPUP_BRIGHTNESS_SNAP = 4
+
+# --notification-opacity sets how much ground an arriving banner paints over
+# that blur. Bounds are NOTIFICATION_OPACITY_MIN and NOTIFICATION_OPACITY_MAX in
+# lib/steps-css.sh; 40 is what css/shell-notification-blur.css ships.
+NOTIFICATION_OPACITY_MIN = 10
+NOTIFICATION_OPACITY_MAX = 85
+NOTIFICATION_OPACITY_DEFAULT = 40
+
+NOTIFICATION_OPACITY_MARKS = [
+    (20, "sheer"),
+    (40, "tuned"),
+    (70, "solid"),
+]
+
+NOTIFICATION_OPACITY_SNAP = 4
 
 # What both tint memos hold, and the shipped answer for each. Black is not a
 # colour anyone picked — it is the sheets as written, which is why choosing it
@@ -485,7 +544,8 @@ NAV_SECTIONS = [
 # elsewhere in this file.
 SEARCH_INDEX = {
     "glass": ["frosted", "transparent", "solid", "blur", "tint", "opacity",
-             "transparency", "popup blur", "window blur", "scope"],
+             "transparency", "popup blur", "window blur", "scope",
+             "notification", "notifications", "banner"],
     "appearance": ["accent", "colour", "color", "font", "icon", "cursor",
                   "pointer", "cursor size", "pointer size", "titlebar",
                   "window buttons", "colloid", "reversal", "hatter",
@@ -534,9 +594,13 @@ FLAG_LABELS = {
     "--no-app-transparency": ("glass", "Window transparency"),
     "--popup-blur": ("glass", "Popup blur"),
     "--no-popup-blur": ("glass", "Popup blur"),
+    "--notification-blur": ("glass", "Notification blur"),
+    "--no-notification-blur": ("glass", "Notification blur"),
     "--app-tint-color": ("glass", "App tint"),
     "--shell-tint-color": ("glass", "Shell tint"),
     "--blur-strength": ("glass", "Blur strength"),
+    "--popup-brightness": ("glass", "Popup blur brightness"),
+    "--notification-opacity": ("glass", "Notification ground"),
     "--app-blur-allow": ("apps", "Blur allow list"),
     "--app-blur-block": ("apps", "Blur block list"),
 }
@@ -822,6 +886,19 @@ def read_percent_memo(name):
     except ValueError:
         return 100
     return max(BLUR_STRENGTH_MIN, min(BLUR_STRENGTH_MAX, value))
+
+
+def read_bounded_memo(name, low, high, default):
+    """A whole-percentage memo, clamped, or the shipped answer for it.
+
+    read_percent_memo above is the same thing pinned to the blur strength's own
+    bounds, and stays as it is because it is the one this window had first.
+    """
+    try:
+        value = int(read_memo(name, ""))
+    except ValueError:
+        return default
+    return max(low, min(high, value))
 
 
 def read_cursor_size():
@@ -1872,6 +1949,7 @@ class Settings:
             self.scope = "gtk"
 
         self.popup_blur = read_memo("popup-blur", "1") != "0"
+        self.notification_blur = read_memo("notification-blur", "1") != "0"
 
         if not self.glass_mode:
             # Derived exactly as glass_mode_from_state does in
@@ -1890,6 +1968,12 @@ class Settings:
         self.app_tint = read_hex_memo("app-tint-color")
         self.shell_tint = read_hex_memo("shell-tint-color")
         self.blur_strength = read_percent_memo("blur-strength")
+        self.popup_brightness = read_bounded_memo(
+            "popup-brightness", POPUP_BRIGHTNESS_MIN, POPUP_BRIGHTNESS_MAX,
+            POPUP_BRIGHTNESS_DEFAULT)
+        self.notification_opacity = read_bounded_memo(
+            "notification-opacity", NOTIFICATION_OPACITY_MIN,
+            NOTIFICATION_OPACITY_MAX, NOTIFICATION_OPACITY_DEFAULT)
 
         # Which windows the applications component treats. Blur My Shell reads
         # one or the other depending on enable-all, which is the same choice
@@ -1974,8 +2058,11 @@ class Settings:
         disk_app_tint = read_memo("app-tint-color", "")
         disk_shell_tint = read_memo("shell-tint-color", "")
         disk_strength = read_memo("blur-strength", "")
+        disk_brightness = read_memo("popup-brightness", "")
+        disk_ground = read_memo("notification-opacity", "")
         disk_scope = read_memo("app-blur-scope", "")
         disk_popup = read_memo("popup-blur", "")
+        disk_notification = read_memo("notification-blur", "")
 
         self.modes = {}
         for mode in GLASS_MODES:
@@ -1998,14 +2085,30 @@ class Settings:
                                               disk_strength or "100"))
             except ValueError:
                 strength = 100
+            try:
+                brightness = int(read_mode_memo(
+                    mode, "popup-brightness",
+                    disk_brightness or str(POPUP_BRIGHTNESS_DEFAULT)))
+            except ValueError:
+                brightness = POPUP_BRIGHTNESS_DEFAULT
+            try:
+                ground = int(read_mode_memo(
+                    mode, "notification-opacity",
+                    disk_ground or str(NOTIFICATION_OPACITY_DEFAULT)))
+            except ValueError:
+                ground = NOTIFICATION_OPACITY_DEFAULT
             self.modes[mode] = {
                 "transparency": read_mode_memo(mode, "app-transparency", level),
                 "app_tint": read_mode_memo(mode, "app-tint-color", tint_default),
                 "shell_tint": read_mode_memo(mode, "shell-tint-color",
                                              shell_default),
                 "blur_strength": strength,
+                "popup_brightness": brightness,
+                "notification_opacity": ground,
                 "popup_blur": read_mode_memo(mode, "popup-blur",
                                              disk_popup or "1") != "0",
+                "notification_blur": read_mode_memo(
+                    mode, "notification-blur", disk_notification or "1") != "0",
                 "scope": read_mode_memo(mode, "app-blur-scope",
                                         disk_scope or "gtk"),
             }
@@ -2019,7 +2122,10 @@ class Settings:
                 "app_tint": self.app_tint,
                 "shell_tint": self.shell_tint,
                 "blur_strength": self.blur_strength,
+                "popup_brightness": self.popup_brightness,
+                "notification_opacity": self.notification_opacity,
                 "popup_blur": self.popup_blur,
+                "notification_blur": self.notification_blur,
                 "scope": self.scope,
             })
 
@@ -2131,6 +2237,7 @@ class Settings:
         scope_base = base("scope")
         transparency_base = base("transparency")
         popup_base = base("popup_blur")
+        notification_base = base("notification_blur")
         app_tint_base = base("app_tint")
         shell_tint_base = base("shell_tint")
 
@@ -2160,6 +2267,10 @@ class Settings:
             args.append("--popup-blur" if self.popup_blur
                         else "--no-popup-blur")
 
+        if self.notification_blur != notification_base:
+            args.append("--notification-blur" if self.notification_blur
+                        else "--no-notification-blur")
+
         # The two tints. Sent as the value rather than as an on/off, because
         # black is a value in its own right — it is the state the sheets ship
         # in, and asking for it again is how a tint is undone.
@@ -2180,6 +2291,14 @@ class Settings:
         # comparison against `other`, never the drawer.
         if self.blur_strength != other.blur_strength:
             args += ["--blur-strength", str(self.blur_strength)]
+
+        # Beside the strength and compared the same way, for the same reason
+        # its comment gives: neither is part of a mode's identity, so both are
+        # a plain comparison against `other` rather than against the drawer.
+        if self.popup_brightness != other.popup_brightness:
+            args += ["--popup-brightness", str(self.popup_brightness)]
+        if self.notification_opacity != other.notification_opacity:
+            args += ["--notification-opacity", str(self.notification_opacity)]
 
         # Whichever list changed, consulted by the mode in force or not.
         #
@@ -2666,6 +2785,8 @@ class Window(Adw.ApplicationWindow):
         self._tints = {}
         self._tint_rows = {}
         self._strength_scales = {}
+        self._brightness_scales = {}
+        self._ground_scales = {}
         # Live preview: tint, transparency, radius, blur strength, popup blur
         # and window-blur scope show on the real desktop as they move, through
         # bin/aura-glass-preview — see that script for why calling it on every
@@ -2967,7 +3088,9 @@ class Window(Adw.ApplicationWindow):
         "--app-transparency", "--no-app-transparency",
         "--radius-preset", "--radius-custom",
         "--blur-strength",
+        "--popup-brightness", "--notification-opacity",
         "--popup-blur", "--no-popup-blur",
+        "--notification-blur", "--no-notification-blur",
     )) | _APP_ONLY_FLAGS
 
     def _on_preview_toggle(self, button):
@@ -3029,13 +3152,19 @@ class Window(Adw.ApplicationWindow):
         else:
             cmd = ("%s begin && %s set --app-tint %s --shell-tint %s "
                   "--transparency %s --radius-custom %s --blur-strength %s "
-                  "--popup-blur %s --window-blur %s --scope %s "
+                  "--popup-brightness %s --notification-opacity %s "
+                  "--popup-blur %s --notification-blur %s "
+                  "--window-blur %s --scope %s "
                   "--app-blur-allow %s --app-blur-block %s"
                   % (q(script), q(script), q(current.app_tint),
                      q(current.shell_tint), q(current.transparency),
                      q(",".join(str(v) for v in current.radius_custom)),
                      q(str(current.blur_strength)),
-                     q("1" if current.popup_blur else "0"), q(window_blur),
+                     q(str(current.popup_brightness)),
+                     q(str(current.notification_opacity)),
+                     q("1" if current.popup_blur else "0"),
+                     q("1" if current.notification_blur else "0"),
+                     q(window_blur),
                      q(scope), q(",".join(current.allow)),
                      q(",".join(current.block))))
         self._preview_proc = stream_command(
@@ -3926,6 +4055,8 @@ class Window(Adw.ApplicationWindow):
 
         page.add(glass)
         page.add(self._build_blur_strength_group("frosted"))
+        page.add(self._build_popup_brightness_group("frosted"))
+        page.add(self._build_notification_ground_group("frosted"))
 
         # Which surfaces the blur reaches, once the tint/opacity/amount above
         # have already answered what it looks like. Two switches, not the
@@ -3960,6 +4091,14 @@ class Window(Adw.ApplicationWindow):
             active=frosted["popup_blur"])
         self._popup_row.connect("notify::active", self._on_changed, "popup_blur")
         reach.add(self._popup_row)
+
+        self._notification_row = Adw.SwitchRow(
+            title=NOTIFICATION_BLUR_TITLE,
+            subtitle=NOTIFICATION_BLUR_SUBTITLE,
+            active=frosted["notification_blur"])
+        self._notification_row.connect("notify::active", self._on_changed,
+                                       "notification_blur")
+        reach.add(self._notification_row)
         page.add(reach)
 
         # Last on the page rather than first: the cost is worth knowing, but
@@ -4015,6 +4154,8 @@ class Window(Adw.ApplicationWindow):
             "transparent",
             description="How far the popup and panel blur reaches — the only "
                         "blur this mode has."))
+        page.add(self._build_popup_brightness_group("transparent"))
+        page.add(self._build_notification_ground_group("transparent"))
 
         popups = Adw.PreferencesGroup(title="Popups")
         self._t_popup_row = Adw.SwitchRow(
@@ -4024,6 +4165,14 @@ class Window(Adw.ApplicationWindow):
         self._t_popup_row.connect("notify::active", self._on_changed,
                                   "popup_blur")
         popups.add(self._t_popup_row)
+
+        self._t_notification_row = Adw.SwitchRow(
+            title=NOTIFICATION_BLUR_TITLE,
+            subtitle=NOTIFICATION_BLUR_SUBTITLE,
+            active=transparent["notification_blur"])
+        self._t_notification_row.connect("notify::active", self._on_changed,
+                                         "notification_blur")
+        popups.add(self._t_notification_row)
         page.add(popups)
 
         page.add(tip_card(
@@ -4262,6 +4411,94 @@ class Window(Adw.ApplicationWindow):
         bar.append(scale)
         group.add(bar)
         return group
+
+    # The two knobs beside the amount, each in a group of its own rather than
+    # sharing one with it. Adw.PreferencesGroup puts every non-row child after
+    # its whole list box, so three bars in one group would stack under all three
+    # rows at once with nothing saying which belonged to which — the same
+    # constraint the amount's own group is built around.
+    def _build_percent_group(self, mode, title, description, row_title,
+                             row_subtitle, low, high, marks, page, snap,
+                             value, registry):
+        group = Adw.PreferencesGroup(title=title, description=description)
+
+        readout = Gtk.Label(valign=Gtk.Align.CENTER)
+        readout.add_css_class("numeric")
+        readout.add_css_class("dim-label")
+
+        row = Adw.ActionRow(title=row_title, subtitle=row_subtitle)
+        row.add_suffix(readout)
+        group.add(row)
+
+        scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL,
+                                         low, high, 5)
+        scale.set_hexpand(True)
+        scale.set_draw_value(False)
+        for at, label in marks:
+            scale.add_mark(at, Gtk.PositionType.BOTTOM, label)
+        # Fives and a four-wide snap, for the reason the amount's bar gives at
+        # length: five percent is about the smallest step that shows up on a
+        # screen, and four either side of a mark is the widest radius that
+        # leaves the stop next to it reachable.
+        tame_scale(scale, marks, 5, page, snap)
+        scale._readout = readout
+        scale.set_value(value)
+        self._sync_percent_value(scale)
+        scale.connect("value-changed", self._on_percent_changed)
+        registry[mode] = scale
+
+        bar = Gtk.Box(margin_start=12, margin_end=12, margin_top=4,
+                      margin_bottom=4)
+        bar.append(scale)
+        group.add(bar)
+        return group
+
+    def _sync_percent_value(self, scale):
+        scale._readout.set_label("%d%%" % round(scale.get_value()))
+
+    def _on_percent_changed(self, scale):
+        self._sync_percent_value(scale)
+        if self._loading:
+            return
+        self._mark_dirty()
+
+    def _build_popup_brightness_group(self, mode):
+        """How bright the popup blur comes out, menus and banners together.
+
+        Together, and the description says so, because Blur My Shell hands the
+        whole popup component one pipeline — a banner cannot be lit without the
+        date menu and the quick-toggle menus coming with it, and a control that
+        implied otherwise would be lying about what it moves.
+        """
+        return self._build_percent_group(
+            mode, "Popup blur brightness",
+            "How bright the blur behind menus, Quick Settings and "
+            "notification banners comes out. One pipeline serves all three, "
+            "so this moves them together.",
+            "Brightness",
+            "100% is the backdrop's own light — under darkens, over lifts",
+            POPUP_BRIGHTNESS_MIN, POPUP_BRIGHTNESS_MAX,
+            POPUP_BRIGHTNESS_MARKS, 25, POPUP_BRIGHTNESS_SNAP,
+            self._applied.modes[mode]["popup_brightness"],
+            self._brightness_scales)
+
+    def _build_notification_ground_group(self, mode):
+        """How much a banner paints over the blur it arrives on.
+
+        Its own number rather than a share of Opacity above: that one is about
+        a window being worked in, this one about a banner that arrived unasked
+        and has to be readable over whatever happened to be behind it.
+        """
+        return self._build_percent_group(
+            mode, "Notification ground",
+            "How much an arriving banner paints over its own blur. Hover and "
+            "pressed step up from wherever this lands, so the ladder holds.",
+            "Opacity",
+            "Lower shows more blur and less backing behind the text",
+            NOTIFICATION_OPACITY_MIN, NOTIFICATION_OPACITY_MAX,
+            NOTIFICATION_OPACITY_MARKS, 15, NOTIFICATION_OPACITY_SNAP,
+            self._applied.modes[mode]["notification_opacity"],
+            self._ground_scales)
 
     def _sync_blur_strength_value(self, scale):
         scale._readout.set_label("%d%%" % round(scale.get_value()))
@@ -5856,15 +6093,22 @@ class Window(Adw.ApplicationWindow):
             s.app_tint = self._applied.app_tint
             s.shell_tint = self._applied.shell_tint
             s.blur_strength = self._applied.blur_strength
+            s.popup_brightness = self._applied.popup_brightness
+            s.notification_opacity = self._applied.notification_opacity
             s.scope = "none"
             s.transparency = "0"
             s.popup_blur = False
+            s.notification_blur = False
         else:
             tints = self._tints[s.glass_mode]
             s.app_tint = tints["app"]
             s.shell_tint = tints["shell"]
             s.blur_strength = int(round(
                 self._strength_scales[s.glass_mode].get_value()))
+            s.popup_brightness = int(round(
+                self._brightness_scales[s.glass_mode].get_value()))
+            s.notification_opacity = int(round(
+                self._ground_scales[s.glass_mode].get_value()))
             if s.glass_mode == "transparent":
                 # No scope and no off switch. Not blurring behind a window is
                 # what this mode is, and a level of 0 is not a state it has.
@@ -5872,6 +6116,7 @@ class Window(Adw.ApplicationWindow):
                 s.transparency = percent_to_level(
                     round(self._t_transparency_scale.get_value()))
                 s.popup_blur = self._t_popup_row.get_active()
+                s.notification_blur = self._t_notification_row.get_active()
             else:
                 s.scope = self._scope()
                 s.transparency = (
@@ -5879,6 +6124,7 @@ class Window(Adw.ApplicationWindow):
                         round(self._transparency_scale.get_value()))
                     if self._transparency_on.get_active() else "0")
                 s.popup_blur = self._popup_row.get_active()
+                s.notification_blur = self._notification_row.get_active()
         s.allow = list(self._allow)
         s.block = list(self._block)
         s.icons = join_icons(
@@ -6049,6 +6295,7 @@ class Window(Adw.ApplicationWindow):
             self._transparency_scale.set_value(
                 level_to_percent(frosted["transparency"]))
         self._popup_row.set_active(frosted["popup_blur"])
+        self._notification_row.set_active(frosted["notification_blur"])
 
         transparent = self._applied.modes["transparent"]
         # No such guard here: this mode has no off, so its level is always a
@@ -6056,6 +6303,7 @@ class Window(Adw.ApplicationWindow):
         self._t_transparency_scale.set_value(
             level_to_percent(transparent["transparency"]))
         self._t_popup_row.set_active(transparent["popup_blur"])
+        self._t_notification_row.set_active(transparent["notification_blur"])
 
         for mode, tints in self._tints.items():
             drawer = self._applied.modes[mode]
@@ -6066,6 +6314,10 @@ class Window(Adw.ApplicationWindow):
             rows["shell"]._button.set_rgba(parse_hex(tints["shell"]))
             rows["link"].set_active(tints["app"] == tints["shell"])
             self._strength_scales[mode].set_value(drawer["blur_strength"])
+            self._brightness_scales[mode].set_value(
+                drawer["popup_brightness"])
+            self._ground_scales[mode].set_value(
+                drawer["notification_opacity"])
 
         # In place rather than rebound: the per-app page's rows read
         # self._allow / self._block straight off this window on every rebuild,

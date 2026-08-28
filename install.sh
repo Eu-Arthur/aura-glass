@@ -80,6 +80,8 @@ APP_BLUR_BLOCK=""
 APP_BLUR_BLOCK_EXPLICIT=""
 WANT_POPUP_BLUR=1
 POPUP_BLUR_EXPLICIT=""
+WANT_NOTIFICATION_BLUR=1
+NOTIFICATION_BLUR_EXPLICIT=""
 WINDOW_BUTTONS=""        # empty = leave the titlebar as the system has it
 WINDOW_BUTTONS_EXPLICIT=""
 TITLEBUTTON_STYLE=""     # empty = remembered choice, then minimal
@@ -99,6 +101,8 @@ ICONS=""            # empty = remembered choice, then colloid
 ICONS_EXPLICIT=""
 GRAIN=""          # empty keeps the preset's value, or the remembered choice
 BLUR_STRENGTH=""    # empty = remembered choice, then the tuned radii (100)
+POPUP_BRIGHTNESS=""      # empty = remembered choice, then the preset (115)
+NOTIFICATION_OPACITY=""  # empty = remembered choice, then the sheet (40)
 APP_TINT_COLOR=""   # empty = remembered choice, then black (#000000)
 SHELL_TINT_COLOR="" # empty = remembered choice, then black (#000000)
 RADIUS_PRESET=""       # empty = remembered choice, then default
@@ -160,6 +164,13 @@ ${C_BLD}aura-glass${C_OFF} — a fluid frosted-glass desktop for GNOME 48-50
     --no-grain        no grain at all (same as --grain 0, and the default)
     --blur-strength P how far every blur reaches, as a percentage of the tuned
                       radii: 25-200, 100 is the tuned look (remembered)
+    --popup-brightness P
+                      how bright the blur behind menus, Quick Settings and
+                      notification banners comes out, as a percentage of the
+                      backdrop: 50-150, 100 leaves it alone (remembered)
+    --notification-opacity P
+                      how much ground an arriving banner paints over that blur:
+                      10-85 (remembered)
     --app-tint-color HEX
                       the colour a translucent app window is darkened toward,
                       e.g. #101820. Default #000000 (remembered)
@@ -199,7 +210,11 @@ ${C_BLD}aura-glass${C_OFF} — a fluid frosted-glass desktop for GNOME 48-50
     --osd             minimal pill OSD for volume & brightness (default: on)
     --no-osd          keep stock volume and brightness popup
     --no-popup-blur   keep flat translucent popups and skip blur behind menus
-    --no-bms-git      use Blur My Shell published build (implies --no-popup-blur)
+    --no-notification-blur
+                      keep flat notification banners and history cards, independently
+                      of --popup-blur
+    --no-bms-git      use Blur My Shell published build (implies --no-popup-blur
+                      and --no-notification-blur)
     --app-transparency LEVEL
                       window transparency with blur: 90% (230, default), 82% (210),
                       94% (240), or custom 70%-100% (e.g. --app-transparency 90%). Off by default
@@ -294,6 +309,10 @@ parse_flags() {
         --no-grain)      GRAIN=0; EXPLICIT_FLAGS=1; shift ;;
         --blur-strength) BLUR_STRENGTH="${2:-100}"; EXPLICIT_FLAGS=1; shift 2 ;;
         --blur-strength=*) BLUR_STRENGTH="${1#*=}"; EXPLICIT_FLAGS=1; shift ;;
+        --popup-brightness) POPUP_BRIGHTNESS="${2:-100}"; EXPLICIT_FLAGS=1; shift 2 ;;
+        --popup-brightness=*) POPUP_BRIGHTNESS="${1#*=}"; EXPLICIT_FLAGS=1; shift ;;
+        --notification-opacity) NOTIFICATION_OPACITY="${2:-40}"; EXPLICIT_FLAGS=1; shift 2 ;;
+        --notification-opacity=*) NOTIFICATION_OPACITY="${1#*=}"; EXPLICIT_FLAGS=1; shift ;;
         --app-tint-color) APP_TINT_COLOR="${2:-}"; EXPLICIT_FLAGS=1; shift 2 ;;
         --app-tint-color=*) APP_TINT_COLOR="${1#*=}"; EXPLICIT_FLAGS=1; shift ;;
         --shell-tint-color) SHELL_TINT_COLOR="${2:-}"; EXPLICIT_FLAGS=1; shift 2 ;;
@@ -316,11 +335,16 @@ parse_flags() {
         --osd)           WANT_OSD=1; EXPLICIT_FLAGS=1; shift ;;
         --no-osd)        WANT_OSD=0; EXPLICIT_FLAGS=1; shift ;;
         --bms-git)       WANT_BMS_GIT=1; EXPLICIT_FLAGS=1; shift ;;
-        --no-bms-git)    WANT_BMS_GIT=0; WANT_POPUP_BLUR=0
-                         POPUP_BLUR_EXPLICIT=1; EXPLICIT_FLAGS=1; shift ;;
+        --no-bms-git)    WANT_BMS_GIT=0; WANT_POPUP_BLUR=0; WANT_NOTIFICATION_BLUR=0
+                         POPUP_BLUR_EXPLICIT=1; NOTIFICATION_BLUR_EXPLICIT=1; EXPLICIT_FLAGS=1; shift ;;
         --popup-blur)    WANT_POPUP_BLUR=1; WANT_BMS_GIT=1
                          POPUP_BLUR_EXPLICIT=1; EXPLICIT_FLAGS=1; shift ;;
         --no-popup-blur) WANT_POPUP_BLUR=0; POPUP_BLUR_EXPLICIT=1; EXPLICIT_FLAGS=1; shift ;;
+        --notification-blur)
+                         WANT_NOTIFICATION_BLUR=1; WANT_BMS_GIT=1
+                         NOTIFICATION_BLUR_EXPLICIT=1; EXPLICIT_FLAGS=1; shift ;;
+        --no-notification-blur)
+                         WANT_NOTIFICATION_BLUR=0; NOTIFICATION_BLUR_EXPLICIT=1; EXPLICIT_FLAGS=1; shift ;;
         --glass-mode)    GLASS_MODE="${2:-}"; GLASS_MODE_EXPLICIT=1; EXPLICIT_FLAGS=1; shift 2 ;;
         --glass-mode=*)  GLASS_MODE="${1#*=}"; GLASS_MODE_EXPLICIT=1; EXPLICIT_FLAGS=1; shift ;;
         --blur)          WANT_BLUR=1; BLUR_EXPLICIT=1; EXPLICIT_FLAGS=1; shift ;;
@@ -339,6 +363,7 @@ parse_flags() {
         --window-blur)   WANT_WINDOW_BLUR=1; WINDOW_BLUR_EXPLICIT=1; EXPLICIT_FLAGS=1; shift ;;
         --no-window-blur) WANT_WINDOW_BLUR=0; WINDOW_BLUR_EXPLICIT=1; APP_BLUR_SCOPE="none"; APP_BLUR_SCOPE_EXPLICIT=1; [ -z "$APP_TRANSPARENCY_EXPLICIT" ] && APP_TRANSPARENCY=0.95; EXPLICIT_FLAGS=1; shift ;;
         --no-blur)       WANT_BLUR=0; BLUR_EXPLICIT=1; WANT_POPUP_BLUR=0; POPUP_BLUR_EXPLICIT=1
+                         WANT_NOTIFICATION_BLUR=0; NOTIFICATION_BLUR_EXPLICIT=1
                          WANT_WINDOW_BLUR=0; WINDOW_BLUR_EXPLICIT=1
                          WANT_ROUNDED_BLUR=0; EXPLICIT_FLAGS=1; shift ;;
         --rounded-blur)      WANT_ROUNDED_BLUR=1; EXPLICIT_FLAGS=1; shift ;;
@@ -836,6 +861,8 @@ EOF
     [ "$WANT_BLUR" = 0 ] && blur_desc="Solid (No blur)"
     popup_desc="Enabled"
     [ "$WANT_POPUP_BLUR" = 0 ] && popup_desc="Disabled (Flat)"
+    notification_desc="Enabled"
+    [ "$WANT_NOTIFICATION_BLUR" = 0 ] && notification_desc="Disabled (Flat)"
     win_desc="GTK / GNOME Applications only (Low CPU)"
     [ "$APP_BLUR_SCOPE" = "all" ] && win_desc="All Applications (Heavy)"
     [ "$WANT_WINDOW_BLUR" = 0 ] && win_desc="Disabled (Opaque)"
@@ -871,6 +898,7 @@ ${C_BLD}================ Configuration Summary ================${C_OFF}
   ${C_BLD}Accent Color:${C_OFF}        $ACCENT
   ${C_BLD}Blur Mode:${C_OFF}           $blur_desc
   ${C_BLD}Popup Blur:${C_OFF}          $popup_desc
+  ${C_BLD}Notification Blur:${C_OFF}   $notification_desc
   ${C_BLD}Window Blur:${C_OFF}         $win_desc
   ${C_BLD}App Translucency:${C_OFF}    $trans_desc
   ${C_BLD}Icon Theme:${C_OFF}          $icon_desc

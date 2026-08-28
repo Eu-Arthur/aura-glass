@@ -171,14 +171,16 @@ MANIFEST = [
 # must tolerate their absence — while the checker, which reads css/, must not,
 # because in the repo they are always there.
 #
-#   shell-80-solid.css    installed only for --no-blur
-#   shell-popup-blur.css  installed only while popup blur is on
+#   shell-80-solid.css         installed only for --no-blur
+#   shell-popup-blur.css       installed only while popup blur is on
+#   shell-notification-blur.css  installed only while notification blur is on
 #
 # Every other sheet the manifest names is installed unconditionally, so a missing
 # one means an incomplete install and stays a hard error.
 OPTIONAL_SHEETS = {
     "shell-80-solid.css",
     "shell-popup-blur.css",
+    "shell-notification-blur.css",
 }
 
 # The radius tokens, in the order install.sh and the GUI pass them around. The

@@ -51,9 +51,12 @@ def state(**kw):
     s.transparency = kw.get("transparency", "0.90")
     s.scope = kw.get("scope", "gtk")
     s.popup_blur = kw.get("popup_blur", True)
+    s.notification_blur = kw.get("notification_blur", True)
     s.app_tint = kw.get("app_tint", "#000000")
     s.shell_tint = kw.get("shell_tint", "#000000")
     s.blur_strength = kw.get("blur_strength", 100)
+    s.popup_brightness = kw.get("popup_brightness", 115)
+    s.notification_opacity = kw.get("notification_opacity", 40)
     s.allow = list(kw.get("allow", ["org.gnome.Nautilus", "org.gnome.Console"]))
     s.block = list(kw.get("block", ["*chrome*", "*electron*"]))
     s.icons = kw.get("icons", "colloid")
@@ -77,10 +80,14 @@ def state(**kw):
     s.modes = {
         "frosted": {"transparency": "0", "app_tint": "#000000",
                     "shell_tint": "#000000", "blur_strength": 100,
-                    "popup_blur": True, "scope": "gtk"},
+                    "popup_brightness": 115, "notification_opacity": 40,
+                    "popup_blur": True, "notification_blur": True,
+                    "scope": "gtk"},
         "transparent": {"transparency": "0.82", "app_tint": "#0b0b0f",
                         "shell_tint": "#0b0b0f", "blur_strength": 100,
-                        "popup_blur": True, "scope": "gtk"},
+                        "popup_brightness": 115, "notification_opacity": 40,
+                        "popup_blur": True, "notification_blur": True,
+                        "scope": "gtk"},
     }
     for mode, overrides in kw.get("modes", {}).items():
         s.modes[mode].update(overrides)
@@ -217,6 +224,19 @@ CASES = [
 
     ("popup blur off", FROSTED, state(popup_blur=False), ["--no-popup-blur"]),
 
+    ("notification blur off", FROSTED, state(notification_blur=False),
+     ["--no-notification-blur"]),
+
+    # The two switches are independent: turning one off must not touch the
+    # other, in either direction.
+    ("notification blur off, popup blur stays on", FROSTED,
+     state(popup_blur=True, notification_blur=False),
+     ["--no-notification-blur"]),
+
+    ("popup blur off, notification blur stays on", FROSTED,
+     state(popup_blur=False, notification_blur=True),
+     ["--no-popup-blur"]),
+
     # The two tints and the blur strength. Values rather than on/off: black and
     # 100 are the state the sheets ship in, so asking for them again is how one
     # is undone.
@@ -249,6 +269,18 @@ CASES = [
 
     ("blur strength back to the tuned radii",
      state(blur_strength=60), state(), ["--blur-strength", "100"]),
+
+    ("popup blur brightness moved", FROSTED, state(popup_brightness=90),
+     ["--popup-brightness", "90"]),
+
+    ("popup blur brightness back to the preset",
+     state(popup_brightness=90), state(), ["--popup-brightness", "115"]),
+
+    ("notification ground moved", FROSTED, state(notification_opacity=25),
+     ["--notification-opacity", "25"]),
+
+    ("notification ground back to the sheet's own",
+     state(notification_opacity=25), state(), ["--notification-opacity", "40"]),
 
     # The per-app lists. Whichever one changed goes out, whether or not the mode
     # in force consults it. The window edits both at all times — they are two
@@ -391,9 +423,10 @@ CASES = [
 
     ("everything at once", FROSTED,
      state(accent="slate", radius="rounded", transparency="0.82", scope="all",
-           popup_blur=False),
+           popup_blur=False, notification_blur=False),
      ["--accent", "slate", "--radius-preset", "rounded", "--all-apps-blur",
-      "--app-transparency", "0.82", "--no-popup-blur"]),
+      "--app-transparency", "0.82", "--no-popup-blur",
+      "--no-notification-blur"]),
 ]
 
 failures = []
@@ -544,7 +577,8 @@ for label, base, target, want in CASES:
 # non-off --app-transparency alongside --glass-mode solid, and this is that
 # refusal, stated as an assertion no composed list may trip.
 SOLID_MODE_CONFLICTS = {"--blur", "--window-blur", "--gtk-apps-blur",
-                        "--all-apps-blur", "--popup-blur", "--app-transparency"}
+                        "--all-apps-blur", "--popup-blur",
+                        "--notification-blur", "--app-transparency"}
 for label, _, target, _want in CASES:
     for base in (FROSTED, SOLID, state(scope="none"), state(transparency="0")):
         args = target.flags_against(base)

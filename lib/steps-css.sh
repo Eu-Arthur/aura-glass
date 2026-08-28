@@ -185,6 +185,56 @@ apply_shell_tint_color() {
     ok "shell surfaces tinted toward $want (remembered for later runs)"
 }
 
+# How much ground an arriving notification paints over its own blur.
+#
+# Its own number rather than a share of the app windows' opacity, because the
+# two are not the same question. A window's level says how much of the desktop
+# shows through a surface you are working in; this says how readable a banner
+# that arrived unasked has to be over whatever happened to be behind it, and a
+# desktop tuned for one is regularly wrong for the other.
+#
+# Bounds rather than the full range. Under 10% there is no ground left to read
+# white text against, and over 85% the blur it sits on stops being visible at
+# all — at which point the notification blur switch is the control being asked
+# for, not this one.
+#
+# Remembered like the tints beside it: install_css copies the sheet back from
+# css/ on every run, so an unremembered choice would last until the next
+# install and no longer.
+NOTIFICATION_OPACITY_MIN=10
+NOTIFICATION_OPACITY_MAX=85
+
+apply_notification_opacity() {
+    local want="${NOTIFICATION_OPACITY:-}" memo="$CONF_DIR/notification-opacity"
+    if [ -z "$want" ] && [ -r "$memo" ]; then
+        want="$(cat "$memo" 2>/dev/null || true)"
+    fi
+    [ -n "$want" ] || return 0
+
+    case "$want" in
+        ''|*[!0-9]*) warn "--notification-opacity wants a whole percentage, got '$want'"
+                     return 0 ;;
+    esac
+    if [ "$want" -lt "$NOTIFICATION_OPACITY_MIN" ] || [ "$want" -gt "$NOTIFICATION_OPACITY_MAX" ]; then
+        warn "--notification-opacity $want is outside ${NOTIFICATION_OPACITY_MIN}-${NOTIFICATION_OPACITY_MAX} — leaving the banner ground alone"
+        return 0
+    fi
+
+    if [ "${DRY_RUN:-0}" = 1 ]; then
+        info "dry-run: paint the arriving banner at ${want}%"
+        return 0
+    fi
+
+    python3 "$REPO_ROOT/tools/apply-notification-opacity.py" "$CONF_DIR" "$want" \
+        | sed 's/^/    /' \
+        || { warn "could not set the notification ground"; return 0; }
+    if remembering; then
+        mkdir -p "$CONF_DIR"
+        printf '%s\n' "$want" > "$memo"
+    fi
+    ok "arriving banners at ${want}% ground (remembered for later runs)"
+}
+
 install_transparency_css() {
     local level="${APP_TRANSPARENCY:-0}"
 
@@ -390,12 +440,21 @@ install_css() {
     else
         run rm -f "$CONF_DIR/shell-popup-blur.css"
     fi
+    if [ "${WANT_NOTIFICATION_BLUR:-1}" = 1 ]; then
+        run install -Dm644 "$REPO_ROOT/css/shell-notification-blur.css" "$CONF_DIR/shell-notification-blur.css"
+    else
+        run rm -f "$CONF_DIR/shell-notification-blur.css"
+    fi
     install_transparency_css
     install_window_control_style
     # Over the shell sheets this step has just laid down, and after the solid
     # and popup ones are decided, so whichever set is installed is the set that
     # gets the colour.
     apply_shell_tint_color
+    # The other rewriter over that same sheet, and independent of the tint above
+    # it: that one owns a literal's colour channels, this one owns its alpha, so
+    # the order between the two does not matter and neither undoes the other.
+    apply_notification_opacity
     # After the copies are all in place, and before aura-glass-apply splices
     # them: both rewriters edit what install_css just laid down, so neither can
     # run before the file it edits exists.

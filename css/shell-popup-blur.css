@@ -12,7 +12,12 @@
  *
  *   floating surface (menu) ........... 0.42 -> 0.26
  *   quick settings .................... 0.46 -> 0.30
- *   arriving banner ................... 0.86 -> 0.52
+ *
+ * The banner used to step down here too, but --popup-blur and
+ * --notification-blur are independent switches now, each with its own blur
+ * surface — see css/shell-notification-blur.css, installed only when the
+ * notification switch is on. A banner's ground has to follow that switch,
+ * not this one.
  *
  * Hairlines, the control ladder and every accent rule carry over from
  * shell-20-popup-menus.css untouched.
@@ -69,14 +74,6 @@
   background-color: rgba(0, 0, 0, 0.30);
 }
 
-/* The banner was near-solid because it floats over anything at all — a bright
- * window, video, a pale wallpaper — and had to stay legible without help.
- * It now has its own blurred ground, so it can stop carrying that alone.
- */
-.notification-banner {
-  background-color: rgba(22, 23, 27, 0.52);
-}
-
 .modal-dialog,
 .end-session-dialog,
 .switcher-list,
@@ -87,9 +84,11 @@
   background-color: rgba(0, 0, 0, 0.26);
 }
 
-/* .message is a light lift *inside* the calendar popup rather than a ground of
- * its own, so it is left where shell-tweaks.css put it. It rides whatever is
- * under it, and what is under it just got lighter.
+/* .message used to be a light lift *inside* the calendar popup, riding
+ * whichever blur the popover itself had. Now that each card can carry its
+ * own blur surface, its ground moved out to shell-notification-blur.css too
+ * — see that sheet for why, and dconf's popup/notification key for the
+ * switch it depends on.
  */
 
 /* The OSD pill's fill comes from Custom OSD's inline style, not from here —
