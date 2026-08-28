@@ -8,6 +8,8 @@
 #                            [--transparency LEVEL] [--radius-preset NAME]
 #                            [--radius-custom W,M,Q,N,D,P,O]
 #                            [--blur-strength PCT] [--popup-blur 0|1]
+#                            [--popup-brightness PCT]
+#                            [--notification-opacity PCT]
 #                            [--window-blur 0|1] [--scope gtk|all]
 #                            [--app-blur-allow LIST] [--app-blur-block LIST]
 #     aura-glass-preview apps --allow LIST --block LIST
@@ -90,7 +92,7 @@ BMS=/org/gnome/shell/extensions/blur-my-shell
 # stop it. set no longer touches any of them, but begin still snapshots them and
 # revert still restores them: that is what repairs a $CONF_DIR left mid-preview
 # by an older build of this script.
-PREVIEW_MEMOS="app-tint-color shell-tint-color app-transparency radius-preset radius-custom blur-strength popup-blur window-blur app-blur-scope app-blur-allow app-blur-block"
+PREVIEW_MEMOS="app-tint-color shell-tint-color app-transparency radius-preset radius-custom blur-strength popup-brightness notification-opacity popup-blur notification-blur window-blur app-blur-scope app-blur-allow app-blur-block"
 
 usage() {
     printf 'usage: aura-glass-preview begin|set [options]|apps [options]|revert|status\n' >&2
@@ -154,7 +156,8 @@ cmd_set() {
     require_begun
 
     local app_tint="" shell_tint="" transparency="" radius_preset="" \
-        radius_custom="" blur_strength="" popup_blur="" window_blur="" scope="" \
+        radius_custom="" blur_strength="" popup_brightness="" notification_opacity="" \
+        popup_blur="" notification_blur="" window_blur="" scope="" \
         app_blur_allow="" app_blur_allow_given=0 \
         app_blur_block="" app_blur_block_given=0
     while [ $# -gt 0 ]; do
@@ -165,7 +168,10 @@ cmd_set() {
             --radius-preset) radius_preset="$2"; shift 2 ;;
             --radius-custom) radius_custom="$2"; shift 2 ;;
             --blur-strength) blur_strength="$2"; shift 2 ;;
+            --popup-brightness) popup_brightness="$2"; shift 2 ;;
+            --notification-opacity) notification_opacity="$2"; shift 2 ;;
             --popup-blur) popup_blur="$2"; shift 2 ;;
+            --notification-blur) notification_blur="$2"; shift 2 ;;
             --window-blur) window_blur="$2"; shift 2 ;;
             --scope) scope="$2"; shift 2 ;;
             --app-blur-allow) app_blur_allow="$2"; app_blur_allow_given=1; shift 2 ;;
@@ -183,9 +189,14 @@ cmd_set() {
     # than tuning it, and is applied, never previewed.
     export WANT_BLUR=1
     export WANT_POPUP_BLUR="${popup_blur:-1}"
+    export WANT_NOTIFICATION_BLUR="${notification_blur:-1}"
     export APP_TRANSPARENCY="${transparency:-0}"
     [ -n "$app_tint" ] && export APP_TINT_COLOR="$app_tint"
     [ -n "$shell_tint" ] && export SHELL_TINT_COLOR="$shell_tint"
+    # Read by apply_notification_opacity, inside the install_css below — the
+    # sheet it rewrites is one install_css has just laid down, so it cannot be
+    # set after that call the way the dconf knobs below are.
+    [ -n "$notification_opacity" ] && export NOTIFICATION_OPACITY="$notification_opacity"
 
     if [ -n "$radius_custom" ]; then
         IFS=',' read -r TOKEN_RADIUS_WINDOW TOKEN_RADIUS_MENU \
@@ -223,6 +234,10 @@ cmd_set() {
     export WANT_POPUP_BLUR="${popup_blur:-1}"
     apply_popup_blur >/dev/null
 
+    export NOTIFICATION_BLUR_EXPLICIT=1
+    export WANT_NOTIFICATION_BLUR="${notification_blur:-1}"
+    apply_notification_blur >/dev/null
+
     if [ -n "$blur_strength" ] && [ "$blur_strength" != 100 ]; then
         local shipped
         shipped="$(shipped_pipelines)"
@@ -231,6 +246,14 @@ cmd_set() {
         fi
         export BLUR_STRENGTH="$blur_strength"
         apply_blur_strength >/dev/null
+    fi
+
+    # Beside the strength, and after it for the reason apply_popup_brightness's
+    # own comment gives: the block above resets the whole `pipelines` blob from
+    # the shipped literal, and the brightness this writes lives inside it.
+    if [ -n "$popup_brightness" ]; then
+        export POPUP_BRIGHTNESS="$popup_brightness"
+        apply_popup_brightness >/dev/null
     fi
 
     # Last, and after the blur-strength block above rather than before it. That

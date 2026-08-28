@@ -50,6 +50,13 @@ BMS_PATCH="blur-my-shell-overview.patch"
 # GNOME default) and UTILITY. Together those left a blurred app's own dialogs
 # and tool palettes unblurred. See the patch's own comments.
 BMS_SUBWIN_PATCH="blur-my-shell-subwindows.patch"
+# Applied after BMS_SUBWIN_PATCH: upstream's popup component blurs
+# notification banners under the same single `blur` switch as menus and
+# dialogs, with no way to keep one on without the other. This splits
+# notification banners and history cards onto their own `notification` key,
+# gated independently in extension.js and components/popup/targets.js. See
+# the patch's own comments.
+BMS_NOTIF_PATCH="blur-my-shell-notifications.patch"
 
 ROUNDEDBLUR_REPO="https://github.com/kancko/gnome-rounded-blur.git"
 ROUNDEDBLUR_REF="9c7efb7ac5de"    # v1.0.1

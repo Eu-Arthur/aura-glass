@@ -1,0 +1,173 @@
+/* aura-glass — notification translucency for a blurred desktop.
+ *
+ * Appended after shell-popup-blur.css, and only installed when the patched
+ * Blur My Shell's popup/notification key is on — --no-notification-blur
+ * leaves it out entirely, which is what makes that flag a true no-op, and is
+ * why it has to out-rank shell-30-notifications.css on the cascade: both
+ * paint .message and .notification-banner, and whichever sheet loads last
+ * wins on equal specificity.
+ *
+ * Two surfaces, and they get their blur from two different mechanisms:
+ *
+ *   the arriving banner  a blur surface of its own, parented next to it in
+ *                        the message tray's banner bin
+ *   each history card    a BlurMode.BACKGROUND effect on the card actor
+ *                        itself — see attach_blur() in the patched
+ *                        message_stacks.js
+ *
+ * The card cannot use a surface (an extra actor parented beside it) the way
+ * the banner does. GNOME's NotificationMessageGroup addresses its children by
+ * index — the layout runs `const [top, cover, ...stack] =
+ * container.get_children()` and then `stack.pop()` for the header,
+ * _ensureCoverPosition() pins the cover to index 1, and _addNotification()
+ * offsets its insert index "to skip the cover child" — so any actor parented
+ * beside a card shifts all of that by one and the real NotificationMessage is
+ * never allocated: cards stacked from one app then paint at stale boxes and
+ * land on top of each other. An effect adds no child, so none of that index
+ * math can see it, and it rides the card's own allocation through scrolling,
+ * stacking, expand and collapse for free.
+ *
+ * A BACKGROUND effect blurs what has already been painted behind the card —
+ * inside the calendar popover, that is the popover's own blur surface and
+ * fill — so each card is a second, sharper blur pass over an already-blurred
+ * ground, which is why its ground can sit lower than the banner's: the banner
+ * blurs the desktop once, a card blurs the popover's blur again on top.
+ *
+ *   arriving banner .................... 0.86 -> 0.40   over its own blur
+ *   history card ....................... 0.55 -> 0.22   over its own blur
+ *   history card, second in stack ...... 0.40 -> 0.16
+ *   history card, lower in stack ....... 0.30 -> 0.12
+ *
+ * Typography, icons, buttons, hairlines, the stack's own borders and the
+ * accent rule all carry over from shell-30-notifications.css untouched. Its
+ * shadows do not: with each card carrying its own rounded blur, the blur edge
+ * itself is what separates a card from the sliver of the next one behind it,
+ * and shell-30's drop shadow just double-darkens that edge. See the shadow
+ * rules below for the card and the banner separately — a banner floats alone
+ * over the desktop rather than over another card, so it keeps a lift of its
+ * own.
+ *
+ * The card fills carry !important. shell-30-notifications.css paints them
+ * through .popup-menu .message, which is one class more specific than the
+ * bare .message this sheet would otherwise be matched on; landing later in
+ * the cascade is not enough to beat that, so the weight has to be explicit.
+ *
+ * notification-corner-radius (dconf/core.ini) already covers both surfaces —
+ * see POPUP_CORNER_RADII in the patched popup component, and
+ * NOTIFICATION_CORNER_RADIUS fed into attach_blur()'s effect — so no radius
+ * changes are needed here.
+ */
+
+.popup-menu .message,
+.message {
+  background-color: rgba(20, 20, 26, 0.22) !important;
+  box-shadow: none !important;
+}
+
+.popup-menu .message:hover,
+.popup-menu .message:focus,
+.message:hover,
+.message:focus {
+  background-color: rgba(30, 30, 38, 0.32) !important;
+}
+
+.popup-menu .message:active,
+.message:active {
+  background-color: rgba(38, 38, 48, 0.40) !important;
+}
+
+/* The arriving banner, and the reason it is written as a compound selector
+ * this far down the sheet rather than as a plain .notification-banner rule
+ * up top.
+ *
+ * MessageTray builds a banner as a MessageList.NotificationMessage — the same
+ * widget the history cards are — and then adds `notification-banner` to it, so
+ * a banner carries BOTH classes. A bare `.notification-banner` rule is
+ * therefore matched at the same weight as the `.message` card rule above, and
+ * loses to it outright because the card rule carries !important and it does
+ * not: every banner was painted at the cards' ground instead of the one meant
+ * for it, which is the reason an arriving banner read as unreadably sheer over
+ * its own blur.
+ *
+ * Naming both classes puts this a class ahead of the card rule, so it wins on
+ * specificity rather than on where it lands, and the hover and active steps
+ * have to be spelled out for the same reason: `.message:hover` matches a
+ * banner too, and without a banner-specific step of its own a hover would drop
+ * the banner to the cards' step — lighter on hover, which reads backwards.
+ * The steps mirror the cards' ladder, +0.08 then +0.06.
+ *
+ * The shadow is killed here for the same specificity reason. shell-30-
+ * notifications.css gives a banner no drop shadow, matching the rest of the
+ * desktop, but it says so through a plain `.notification-banner` rule while
+ * the shadow it puts on `.message` carries !important — so a banner inherits
+ * the card shadow unless a compound selector says otherwise, and a banner
+ * floats alone over the desktop rather than over another card.
+ */
+
+.message.notification-banner {
+  background-color: rgba(22, 23, 27, 0.40) !important;
+  box-shadow: none !important;
+}
+
+.message.notification-banner:hover,
+.message.notification-banner:focus {
+  background-color: rgba(30, 31, 38, 0.48) !important;
+}
+
+.message.notification-banner:active {
+  background-color: rgba(38, 39, 48, 0.54) !important;
+}
+
+/* The two lower steps of a stack from one app. They are what is actually seen
+ * of a group that has more than one notification in it: a 10px sliver and a
+ * 7px one, each inset 6px per side, peeking out from under the top card. Each
+ * one carries its own blur effect too, so what separates a sliver from the
+ * card above it is the blur edge, not a shadow.
+ *
+ * Each sliver composites over its own blur on its own rather than over the
+ * card above it, so stepping the fill down is what makes it recede — and the
+ * hairline shell-30-notifications.css puts on each one (0.05 and 0.03 white,
+ * both !important) is what keeps the edge of a receded card visible at all.
+ * Nothing here touches those.
+ */
+
+.popup-menu .message:second-in-stack,
+.message:second-in-stack {
+  background-color: rgba(14, 14, 18, 0.16) !important;
+}
+
+.popup-menu .message:lower-in-stack,
+.message:lower-in-stack {
+  background-color: rgba(10, 10, 14, 0.12) !important;
+}
+
+/* The calendar popover paints its own ground behind the whole message list.
+ * Each card now carries its own blur, but that blur samples whatever is
+ * painted behind the card — so an opaque popover ground would still flatten
+ * every card's blur into one solid-colour smear instead of a frosted pane
+ * over the desktop.
+ *
+ * #calendarArea is an ID selector, so this has to match it ID-for-ID to win —
+ * a class-only rule cannot outrank it however late it lands in the cascade.
+ * What is left behind the cards is .popup-menu-content's own translucent fill
+ * from shell-popup-blur.css and the popover's blur under that.
+ */
+
+.popup-menu-content #calendarArea {
+  background-color: transparent;
+}
+
+/* Each history card sits inside a .message-notification-group, and that group
+ * paints a ground of its own behind the whole run of cards. Stock only ever
+ * sets spacing on it, so nothing in the cascade names that fill — but it is
+ * what composites under every card's blur, and it is what read as a flat grey
+ * slab however far the card fills themselves were stepped down.
+ *
+ * Same reasoning as #calendarArea above: an intermediate ground has to leave
+ * entirely, not merely lighten, or it is simply the thing each card's blur
+ * samples instead of the desktop behind the popover.
+ */
+
+.message-notification-group {
+  background-color: transparent;
+}

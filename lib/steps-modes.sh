@@ -87,6 +87,9 @@ apply_glass_mode() {
             if [ -n "${POPUP_BLUR_EXPLICIT:-}" ] && [ "$WANT_POPUP_BLUR" = 1 ]; then
                 die "--glass-mode solid and --popup-blur contradict each other — solid mode leaves Blur My Shell out entirely, so there is no blur for --popup-blur to turn on. Pick one."
             fi
+            if [ -n "${NOTIFICATION_BLUR_EXPLICIT:-}" ] && [ "$WANT_NOTIFICATION_BLUR" = 1 ]; then
+                die "--glass-mode solid and --notification-blur contradict each other — solid mode leaves Blur My Shell out entirely, so there is no blur for --notification-blur to turn on. Pick one."
+            fi
             if [ -n "${APP_TRANSPARENCY_EXPLICIT:-}" ]; then
                 # Not a plain != 0: this runs before install.sh's own
                 # transparency normalisation, deliberately, because a mode has
@@ -104,6 +107,8 @@ apply_glass_mode() {
             WANT_BLUR=0
             WANT_POPUP_BLUR=0
             POPUP_BLUR_EXPLICIT=1
+            WANT_NOTIFICATION_BLUR=0
+            NOTIFICATION_BLUR_EXPLICIT=1
             # Window blur is the one flag in this list left unguarded here: an
             # explicit --window-blur is refused a step later, by install.sh's
             # own conflict check, which already names the mode when it fires.
@@ -178,13 +183,17 @@ seed_glass_mode() {
     mkdir -p "$dir"
     [ "${GLASS_MODE:-}" = solid ] && return 0
 
-    local disk_level disk_app disk_shell disk_strength disk_scope disk_popup
+    local disk_level disk_app disk_shell disk_strength disk_scope disk_popup disk_notification
+    local disk_brightness disk_ground
     disk_level="$(cat "$CONF_DIR/app-transparency" 2>/dev/null || true)"
     disk_app="$(cat "$CONF_DIR/app-tint-color" 2>/dev/null || true)"
     disk_shell="$(cat "$CONF_DIR/shell-tint-color" 2>/dev/null || true)"
     disk_strength="$(cat "$CONF_DIR/blur-strength" 2>/dev/null || true)"
     disk_scope="$(cat "$CONF_DIR/app-blur-scope" 2>/dev/null || true)"
     disk_popup="$(cat "$CONF_DIR/popup-blur" 2>/dev/null || true)"
+    disk_notification="$(cat "$CONF_DIR/notification-blur" 2>/dev/null || true)"
+    disk_brightness="$(cat "$CONF_DIR/popup-brightness" 2>/dev/null || true)"
+    disk_ground="$(cat "$CONF_DIR/notification-opacity" 2>/dev/null || true)"
 
     if [ "${GLASS_MODE:-}" = transparent ]; then
         # Unconditional, not a fallback for an empty disk_level: the shared
@@ -207,8 +216,15 @@ seed_glass_mode() {
         mode_memo_write shell-tint-color "${disk_shell:-#000000}"
         mode_memo_write app-blur-scope   "${disk_scope:-gtk}"
     fi
-    mode_memo_write blur-strength "${disk_strength:-100}"
-    mode_memo_write popup-blur    "${disk_popup:-1}"
+    mode_memo_write blur-strength    "${disk_strength:-100}"
+    # Both seed to the preset rather than to a neutral 100 and 50: what ships
+    # in dconf/core.ini and css/shell-notification-blur.css is the tuned look,
+    # and a drawer that seeded elsewhere would move the desktop the first time
+    # a mode was opened.
+    mode_memo_write popup-brightness "${disk_brightness:-115}"
+    mode_memo_write notification-opacity "${disk_ground:-40}"
+    mode_memo_write popup-blur       "${disk_popup:-1}"
+    mode_memo_write notification-blur "${disk_notification:-1}"
 }
 
 # The drawer into this run's variables. Only where the flag was not given, on
@@ -233,6 +249,8 @@ load_glass_mode_memos() {
     [ -n "${APP_TINT_COLOR:-}" ]   || APP_TINT_COLOR="$(mode_memo_read app-tint-color '#000000')"
     [ -n "${SHELL_TINT_COLOR:-}" ] || SHELL_TINT_COLOR="$(mode_memo_read shell-tint-color '#000000')"
     [ -n "${BLUR_STRENGTH:-}" ]    || BLUR_STRENGTH="$(mode_memo_read blur-strength 100)"
+    [ -n "${POPUP_BRIGHTNESS:-}" ] || POPUP_BRIGHTNESS="$(mode_memo_read popup-brightness 115)"
+    [ -n "${NOTIFICATION_OPACITY:-}" ] || NOTIFICATION_OPACITY="$(mode_memo_read notification-opacity 40)"
 
     # *_EXPLICIT has meant "the user typed the flag" up to here; from the
     # point one of these is set below it means "settled for this run,
@@ -249,6 +267,10 @@ load_glass_mode_memos() {
         WANT_POPUP_BLUR="$(mode_memo_read popup-blur 1)"
         POPUP_BLUR_EXPLICIT=1
     fi
+    if [ -z "${NOTIFICATION_BLUR_EXPLICIT:-}" ]; then
+        WANT_NOTIFICATION_BLUR="$(mode_memo_read notification-blur 1)"
+        NOTIFICATION_BLUR_EXPLICIT=1
+    fi
     # Transparent has no scope to remember: not blurring behind windows is what
     # the mode is, and apply_glass_mode has already pinned it to none.
     if [ "${GLASS_MODE}" = frosted ] && [ -z "${APP_BLUR_SCOPE_EXPLICIT:-}" ]; then
@@ -264,7 +286,10 @@ save_glass_mode_memos() {
     mode_memo_write app-tint-color   "${APP_TINT_COLOR:-#000000}"
     mode_memo_write shell-tint-color "${SHELL_TINT_COLOR:-#000000}"
     mode_memo_write blur-strength    "${BLUR_STRENGTH:-100}"
+    mode_memo_write popup-brightness "${POPUP_BRIGHTNESS:-115}"
+    mode_memo_write notification-opacity "${NOTIFICATION_OPACITY:-40}"
     mode_memo_write popup-blur       "${WANT_POPUP_BLUR:-1}"
+    mode_memo_write notification-blur "${WANT_NOTIFICATION_BLUR:-1}"
     [ "${GLASS_MODE:-}" = frosted ] && mode_memo_write app-blur-scope "${APP_BLUR_SCOPE:-gtk}"
     return 0
 }

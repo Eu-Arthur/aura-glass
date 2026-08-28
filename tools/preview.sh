@@ -154,6 +154,7 @@ STRIP
         cp "$REPO_ROOT/css/shell-80-solid.css" "$conf/"
     else
         cp "$REPO_ROOT/css/shell-popup-blur.css" "$conf/"
+        cp "$REPO_ROOT/css/shell-notification-blur.css" "$conf/"
     fi
 
     # Mirrors install_window_control_style: at most one style sheet, "minimal"
