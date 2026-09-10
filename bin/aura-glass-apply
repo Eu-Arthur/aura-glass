@@ -282,12 +282,14 @@ def process_target(target, flatten, snippets):
     accent = ("-st-accent-color" if "gnome-shell" in target else
               "@accent_bg_color" if "gtk-4.0" in target else None)
     if accent:
-        selfref = (re.compile(r"^\s*@define-color\s+" + re.escape(accent[1:]) + r"\b")
-                   if accent.startswith("@") else None)
-        css = "".join(
-            line if (selfref and selfref.match(line)) else ACCENT_HEX.sub(accent, line)
-            for line in css.splitlines(True)
-        )
+        if accent.startswith("@"):
+            selfref = re.compile(r"^\s*@define-color\s+" + re.escape(accent[1:]) + r"\b")
+            css = "".join(
+                line if selfref.match(line) else ACCENT_HEX.sub(accent, line)
+                for line in css.splitlines(True)
+            )
+        else:
+            css = ACCENT_HEX.sub(accent, css)
 
     block = "\n\n".join(read_snippet(p) for p in snippets)
     open(target, "w", encoding="utf-8").write(

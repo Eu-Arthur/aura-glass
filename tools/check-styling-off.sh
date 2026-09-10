@@ -41,42 +41,49 @@ printf 'stage { color: white; }\n' > "$conf/shell-00-flat.css"
 printf 'window { color: white; }\n' > "$conf/gtk4-00-flat.css"
 printf '* { outline: none; }\n' > "$conf/gtk3-tweaks.css"
 
+has_text() {
+    local pattern="$1" file="$2" content
+    [ -r "$file" ] || return 1
+    content="$(< "$file")"
+    [[ "$content" == *"$pattern"* ]]
+}
+
 apply_it() { HOME="$fixture" bash "$ROOT/bin/aura-glass-apply" >/dev/null 2>&1; }
 
 apply_it
-grep -q 'aura-glass BEGIN' "$shell_css" \
+has_text 'aura-glass BEGIN' "$shell_css" \
     || failures+=("with no marker the shell sheet should carry the block")
-grep -q 'aura-glass BEGIN' "$gtk4_css" \
+has_text 'aura-glass BEGIN' "$gtk4_css" \
     || failures+=("with no marker the gtk4 sheet should carry the block")
 
 : > "$conf/styling-off"
 apply_it
-grep -q 'aura-glass BEGIN' "$shell_css" \
+has_text 'aura-glass BEGIN' "$shell_css" \
     && failures+=("with the marker the shell sheet should have no block")
-grep -q 'box-shadow: 0 2px 4px' "$shell_css" \
+has_text 'box-shadow: 0 2px 4px' "$shell_css" \
     || failures+=("the shell sheet should be the pristine backup again, shadows and all")
-grep -q 'aura-glass BEGIN' "$gtk4_css" \
+has_text 'aura-glass BEGIN' "$gtk4_css" \
     && failures+=("with the marker the gtk4 sheet should have no block")
 [ -e "$gtk4_dark_css" ] \
     && failures+=("gtk-dark.css has only an .absent marker — standing down should move it aside, not leave it behind")
 [ -f "$conf/backups/gtk4-gtk-dark.css.stood-down" ] \
     || failures+=("standing down should leave the moved-aside gtk-dark.css in backups/ for coming back")
-grep -q 'aura-glass BEGIN' "$gtk3_css" \
+has_text 'aura-glass BEGIN' "$gtk3_css" \
     && failures+=("with the marker the gtk3 sheet should have no block")
-grep -q 'user-own-rule' "$gtk3_css" \
+has_text 'user-own-rule' "$gtk3_css" \
     || failures+=("gtk3.css has no backup record at all — standing down should strip the block but leave the user's own rule")
 
 # Twice is the same as once, for every target — including the one that no
 # longer exists, which has to stay gone rather than reappear.
-before_shell="$(cat "$shell_css")"
-before_gtk4="$(cat "$gtk4_css")"
-before_gtk3="$(cat "$gtk3_css")"
+before_shell="$(< "$shell_css")"
+before_gtk4="$(< "$gtk4_css")"
+before_gtk3="$(< "$gtk3_css")"
 apply_it
-[ "$before_shell" = "$(cat "$shell_css")" ] \
+[ "$before_shell" = "$(< "$shell_css")" ] \
     || failures+=("standing down twice should change nothing the second time (shell)")
-[ "$before_gtk4" = "$(cat "$gtk4_css")" ] \
+[ "$before_gtk4" = "$(< "$gtk4_css")" ] \
     || failures+=("standing down twice should change nothing the second time (gtk4)")
-[ "$before_gtk3" = "$(cat "$gtk3_css")" ] \
+[ "$before_gtk3" = "$(< "$gtk3_css")" ] \
     || failures+=("standing down twice should change nothing the second time (gtk3)")
 [ -e "$gtk4_dark_css" ] \
     && failures+=("standing down twice should leave the moved-aside gtk-dark.css gone from where GTK reads it")
@@ -86,19 +93,19 @@ apply_it
 # exactly what a shell-only assertion here would never catch.
 rm -f "$conf/styling-off"
 apply_it
-grep -q 'aura-glass BEGIN' "$shell_css" \
+has_text 'aura-glass BEGIN' "$shell_css" \
     || failures+=("removing the marker should put the block back (shell)")
-grep -q 'aura-glass BEGIN' "$gtk4_css" \
+has_text 'aura-glass BEGIN' "$gtk4_css" \
     || failures+=("removing the marker should put the block back (gtk4)")
 if [ -f "$gtk4_dark_css" ]; then
-    grep -q 'aura-glass BEGIN' "$gtk4_dark_css" \
+    has_text 'aura-glass BEGIN' "$gtk4_dark_css" \
         || failures+=("gtk-dark.css came back but without its block")
 else
     failures+=("removing the marker should revive gtk-dark.css, not leave it gone")
 fi
-grep -q 'aura-glass BEGIN' "$gtk3_css" \
+has_text 'aura-glass BEGIN' "$gtk3_css" \
     || failures+=("removing the marker should put the block back (gtk3)")
-grep -q 'user-own-rule' "$gtk3_css" \
+has_text 'user-own-rule' "$gtk3_css" \
     || failures+=("coming back should still leave the user's own rule in gtk3.css")
 
 if [ "${#failures[@]}" -gt 0 ]; then

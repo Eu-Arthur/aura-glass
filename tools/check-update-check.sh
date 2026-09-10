@@ -28,31 +28,38 @@ git_quiet() { git -c init.defaultBranch=main -c user.email=t@t -c user.name=t "$
 # A bare "remote" holding the given tags, and a checkout sitting on `local_tag`.
 build() {
     local local_tag="$1"; shift
-    rm -rf "$TMP/remote" "$TMP/work" "$TMP/clone" "$TMP/conf"
-    mkdir -p "$TMP/remote" "$TMP/conf"
+    rm -rf "$TMP/conf"
+    mkdir -p "$TMP/conf"
+    printf '%s\n' "$TMP/work" > "$TMP/conf/repo-path"
+
+    if [ -d "$TMP/work/.git" ] && [ -d "$TMP/remote" ]; then
+        git_quiet -C "$TMP/work" checkout -q -f main
+        local old_tags
+        old_tags="$(git -C "$TMP/work" tag -l)"
+        [ -z "$old_tags" ] || git -C "$TMP/work" tag -d $old_tags >/dev/null 2>&1
+        old_tags="$(git -C "$TMP/remote" tag -l)"
+        [ -z "$old_tags" ] || git -C "$TMP/remote" tag -d $old_tags >/dev/null 2>&1
+
+        for t in "$@"; do git_quiet -C "$TMP/remote" tag "$t"; done
+        git_quiet -C "$TMP/work" tag "$local_tag" || true
+        return 0
+    fi
+
+    rm -rf "$TMP/remote" "$TMP/work" "$TMP/clone"
+    mkdir -p "$TMP/remote"
 
     git_quiet init "$TMP/work"
     ( cd "$TMP/work"
       : > file
       git -c user.email=t@t -c user.name=t add file >/dev/null 2>&1
-      git -c user.email=t@t -c user.name=t commit -m one >/dev/null 2>&1
-      for t in "$@"; do git tag "$t" >/dev/null 2>&1; done ) || return 1
+      git -c user.email=t@t -c user.name=t commit -m one >/dev/null 2>&1 ) || return 1
 
     git_quiet init --bare "$TMP/remote"
     git_quiet -C "$TMP/work" remote add origin "$TMP/remote"
-    git_quiet -C "$TMP/work" push origin main --tags
+    git_quiet -C "$TMP/work" push origin main >/dev/null 2>&1
 
-    # The local checkout keeps only its own tag, so `describe` cannot see the
-    # newer ones the remote has. That is the real situation: a checkout from
-    # before a release has no knowledge of it until it fetches.
-    for t in "$@"; do
-        [ "$t" = "$local_tag" ] || git_quiet -C "$TMP/work" tag -d "$t"
-    done
-    # Cutting a release makes the local tag first and pushes it later, so the
-    # local tag is not necessarily one the remote has. Create it after the push
-    # when that is the case being set up.
+    for t in "$@"; do git_quiet -C "$TMP/remote" tag "$t"; done
     git_quiet -C "$TMP/work" tag "$local_tag" || true
-    printf '%s\n' "$TMP/work" > "$TMP/conf/repo-path"
 }
 
 # Run the real script against the fixture just built and hold it to its exit code

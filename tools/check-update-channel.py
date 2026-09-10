@@ -57,25 +57,33 @@ def git(repo, *args):
         check=True, capture_output=True, text=True)
 
 
+_TEMPLATE_DIR = tempfile.TemporaryDirectory()
+_BASE_WORK = os.path.join(_TEMPLATE_DIR.name, "work")
+_BASE_REMOTE = os.path.join(_TEMPLATE_DIR.name, "remote")
+subprocess.run(["git", "init", "-q", "-b", "main", _BASE_WORK], check=True)
+open(os.path.join(_BASE_WORK, "file"), "w").close()
+git(_BASE_WORK, "add", "file")
+git(_BASE_WORK, "commit", "-m", "one")
+subprocess.run(["git", "init", "-q", "--bare", _BASE_REMOTE], check=True)
+git(_BASE_WORK, "remote", "add", "origin", _BASE_REMOTE)
+git(_BASE_WORK, "push", "-u", "origin", "main")
+
+
 def build(tmp, branch="main", tags=(), detach=False, dirty=False):
     """A checkout on `branch`, tracking a bare origin it has been pushed to."""
     work, remote, conf = (os.path.join(tmp, n) for n in ("work", "remote", "conf"))
     for d in (work, remote, conf):
         shutil.rmtree(d, ignore_errors=True)
+    shutil.copytree(_BASE_WORK, work)
+    shutil.copytree(_BASE_REMOTE, remote)
+    git(work, "remote", "set-url", "origin", remote)
     os.makedirs(conf)
 
-    subprocess.run(["git", "init", "-q", "-b", "main", work], check=True)
-    open(os.path.join(work, "file"), "w").close()
-    git(work, "add", "file")
-    git(work, "commit", "-m", "one")
     if branch != "main":
         git(work, "checkout", "-b", branch)
+        git(work, "push", "-u", "origin", branch)
     for t in tags:
         git(work, "tag", t)
-
-    subprocess.run(["git", "init", "-q", "--bare", remote], check=True)
-    git(work, "remote", "add", "origin", remote)
-    git(work, "push", "-u", "origin", branch)
     if tags:
         git(work, "push", "origin", *tags)
 

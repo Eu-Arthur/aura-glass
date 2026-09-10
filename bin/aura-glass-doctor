@@ -130,19 +130,33 @@ for cmd in "${OPTIONAL_CMDS[@]}"; do
 done
 
 # 4. Python Environment & GI Toolkits
-if python3 - >/dev/null 2>&1 <<'PY'
-import gi
-gi.require_version("Adw", "1")
-gi.require_version("Gtk", "4.0")
-from gi.repository import Adw, Gtk
+read -r _has_adw _has_pil < <(python3 - <<'PY' 2>/dev/null || echo "0 0"
+has_adw = 0
+has_pil = 0
+try:
+    import gi
+    gi.require_version("Adw", "1")
+    gi.require_version("Gtk", "4.0")
+    from gi.repository import Adw, Gtk
+    has_adw = 1
+except Exception:
+    pass
+try:
+    import PIL
+    has_pil = 1
+except Exception:
+    pass
+print(f"{has_adw} {has_pil}")
 PY
-then
+)
+
+if [ "${_has_adw:-0}" = 1 ]; then
     record "Python" "PyGObject & Libadwaita" "OK" "Adw 1 & Gtk 4 bindings available"
 else
     record "Python" "PyGObject & Libadwaita" "WARN" "PyGObject or Libadwaita missing" "Install PyGObject (python3-gi / python-gobject) for graphical wizard."
 fi
 
-if python3 -c "import PIL" 2>/dev/null; then
+if [ "${_has_pil:-0}" = 1 ]; then
     record "Python" "Pillow (PIL)" "OK" "Pillow image library available"
 else
     record "Python" "Pillow (PIL)" "WARN" "Pillow missing" "Install python3-pillow for high-speed wallpaper blur in GDM sync."

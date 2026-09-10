@@ -18,6 +18,24 @@ check() {  # check LABEL ACTUAL EXPECTED
     if [ "$2" = "$3" ]; then pass "$1"; else bad "$1 — got '$2', want '$3'"; fi
 }
 
+check_exists() {
+    local actual="no"
+    [ -e "$2" ] && actual="yes"
+    check "$1" "$actual" "$3"
+}
+
+check_dir() {
+    local actual="no"
+    [ -d "$2" ] && actual="yes"
+    check "$1" "$actual" "$3"
+}
+
+check_content() {
+    local actual=""
+    if [ -r "$2" ]; then actual="$(< "$2")"; fi
+    check "$1" "$actual" "$3"
+}
+
 # A legacy install: old config dir, old theme name, nothing under the new names.
 make_legacy() {
     local h="$1"
@@ -56,13 +74,13 @@ printf '\n1. legacy only\n'
 h="$(mktemp -d)"; trap 'rm -rf "$h"' EXIT
 make_legacy "$h"
 migrate_in "$h"
-check "old config dir gone"    "$([ -e "$h/.config/tahoe-glass" ] && echo yes || echo no)" "no"
-check "new config dir present" "$([ -d "$h/.config/aura-glass" ] && echo yes || echo no)"  "yes"
-check "accent carried over"    "$(cat "$h/.config/aura-glass/accent" 2>/dev/null)"         "teal"
-check "backups carried over"   "$([ -e "$h/.config/aura-glass/backups/gtk4-gtk.css.absent" ] && echo yes || echo no)" "yes"
-check "cache moved"            "$([ -d "$h/.cache/aura-glass/src" ] && echo yes || echo no)" "yes"
-check "theme renamed"          "$([ -d "$h/.themes/Aura-Glass" ] && echo yes || echo no)"   "yes"
-check "old theme gone"         "$([ -e "$h/.themes/Tahoe-Dark" ] && echo yes || echo no)"   "no"
+check_exists  "old config dir gone"    "$h/.config/tahoe-glass" "no"
+check_dir     "new config dir present" "$h/.config/aura-glass"  "yes"
+check_content "accent carried over"    "$h/.config/aura-glass/accent" "teal"
+check_exists  "backups carried over"   "$h/.config/aura-glass/backups/gtk4-gtk.css.absent" "yes"
+check_dir     "cache moved"            "$h/.cache/aura-glass/src" "yes"
+check_dir     "theme renamed"          "$h/.themes/Aura-Glass"   "yes"
+check_exists  "old theme gone"         "$h/.themes/Tahoe-Dark"   "no"
 check "index.theme Name"       "$(grep -c '^Name=Aura-Glass$' "$h/.themes/Aura-Glass/index.theme")"     "1"
 check "index.theme GtkTheme"   "$(grep -c '^GtkTheme=Aura-Glass$' "$h/.themes/Aura-Glass/index.theme")" "1"
 
@@ -75,10 +93,10 @@ printf '/* >>> aura-glass BEGIN <<< */\n' > "$h2/.config/aura-glass/backups/gtk4
 printf 'pristine\n' > "$h2/.config/aura-glass/backups/gnome-shell.css.orig"
 printf 'purple\n'   > "$h2/.config/aura-glass/accent"
 migrate_in "$h2"
-check "polluted .orig removed"  "$([ -e "$h2/.config/aura-glass/backups/gtk4-gtk.css.orig" ] && echo yes || echo no)"   "no"
-check "legacy .absent survives" "$([ -e "$h2/.config/aura-glass/backups/gtk4-gtk.css.absent" ] && echo yes || echo no)" "yes"
-check "newer memo wins"         "$(cat "$h2/.config/aura-glass/accent" 2>/dev/null)" "purple"
-check "old config dir gone"     "$([ -e "$h2/.config/tahoe-glass" ] && echo yes || echo no)" "no"
+check_exists  "polluted .orig removed"  "$h2/.config/aura-glass/backups/gtk4-gtk.css.orig" "no"
+check_exists  "legacy .absent survives" "$h2/.config/aura-glass/backups/gtk4-gtk.css.absent" "yes"
+check_content "newer memo wins"         "$h2/.config/aura-glass/accent" "purple"
+check_exists  "old config dir gone"     "$h2/.config/tahoe-glass" "no"
 
 printf '\n3. a legacy styling-off must not flip a frosted desktop to solid\n'
 h3="$(mktemp -d)"; trap 'rm -rf "$h" "$h2" "$h3"' EXIT
@@ -87,15 +105,15 @@ make_legacy "$h3"
 mkdir -p "$h3/.config/aura-glass/backups"
 printf 'pristine\n' > "$h3/.config/aura-glass/backups/gnome-shell.css.orig"
 migrate_in "$h3"
-check "styling-off not copied" "$([ -e "$h3/.config/aura-glass/styling-off" ] && echo yes || echo no)" "no"
+check_exists "styling-off not copied" "$h3/.config/aura-glass/styling-off" "no"
 
 printf '\n4. dry run changes nothing\n'
 h4="$(mktemp -d)"; trap 'rm -rf "$h" "$h2" "$h3" "$h4"' EXIT
 make_legacy "$h4"
 migrate_in "$h4" 1
-check "old config dir kept"  "$([ -d "$h4/.config/tahoe-glass" ] && echo yes || echo no)" "yes"
-check "old theme kept"       "$([ -d "$h4/.themes/Tahoe-Dark" ] && echo yes || echo no)"  "yes"
-check "no new theme dir"     "$([ -e "$h4/.themes/Aura-Glass" ] && echo yes || echo no)"  "no"
+check_dir    "old config dir kept"  "$h4/.config/tahoe-glass" "yes"
+check_dir    "old theme kept"       "$h4/.themes/Tahoe-Dark"  "yes"
+check_exists "no new theme dir"     "$h4/.themes/Aura-Glass"  "no"
 
 printf '\n5. second install — upstream recreates Tahoe-Dark beside our Aura-Glass\n'
 h5="$(mktemp -d)"; trap 'rm -rf "$h" "$h2" "$h3" "$h4" "$h5"' EXIT
@@ -107,8 +125,8 @@ mkdir -p "$h5/.themes/Aura-Glass/gnome-shell"
 printf 'stale\n' > "$h5/.themes/Aura-Glass/gnome-shell/gnome-shell.css"
 printf 'fresh\n' > "$h5/.themes/Tahoe-Dark/gnome-shell/gnome-shell.css"
 migrate_in "$h5"
-check "upstream copy adopted"  "$(cat "$h5/.themes/Aura-Glass/gnome-shell/gnome-shell.css" 2>/dev/null)" "fresh"
-check "old theme gone"         "$([ -e "$h5/.themes/Tahoe-Dark" ] && echo yes || echo no)" "no"
+check_content "upstream copy adopted"  "$h5/.themes/Aura-Glass/gnome-shell/gnome-shell.css" "fresh"
+check_exists  "old theme gone"         "$h5/.themes/Tahoe-Dark" "no"
 check "no .replacing left"     "$(find "$h5/.themes" -maxdepth 1 -name '*.replacing.*' | wc -l | tr -d ' ')" "0"
 check "index.theme rewritten"  "$(grep -c '^Name=Aura-Glass$' "$h5/.themes/Aura-Glass/index.theme")" "1"
 

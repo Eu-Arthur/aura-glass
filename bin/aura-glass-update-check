@@ -88,8 +88,12 @@ main|master|HEAD|"")
     # the only case that counts as an update. Equal, or a local tag somehow ahead
     # of the remote, are both "nothing to do" — the second happens while cutting
     # a release.
+    if [ "$local_version" = "$remote_version" ]; then
+        up_to_date "$local_version"
+    fi
+
     newest="$(printf '%s\n%s\n' "$local_version" "$remote_version" | sort -V | tail -n 1)"
-    if [ "$local_version" = "$remote_version" ] || [ "$newest" = "$local_version" ]; then
+    if [ "$newest" = "$local_version" ]; then
         up_to_date "$local_version"
     fi
 
@@ -114,7 +118,7 @@ main|master|HEAD|"")
 
     # Seven characters on both sides, taken the same way, so the two versions the
     # window puts side by side are the same shape.
-    local_version="$branch@$(git -C "$REPO" rev-parse --short=7 HEAD)"
+    local_version="$branch@${local_sha:0:7}"
     remote_version="$branch@${remote_sha:0:7}"
 
     if [ "$local_sha" = "$remote_sha" ]; then
