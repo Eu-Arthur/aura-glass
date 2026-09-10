@@ -44,6 +44,10 @@ gdbus monitor --session --dest org.gnome.Mutter.DisplayConfig \
               --object-path /org/gnome/Mutter/DisplayConfig 2>/dev/null \
     | while read -r line; do
         case "$line" in
-            *MonitorsChanged*) rebuild || true ;;
+            *MonitorsChanged*)
+                # Drain burst signals emitted during monitor plug/unplug re-probing
+                while read -r -t 1 _; do :; done
+                rebuild || true
+                ;;
         esac
     done
