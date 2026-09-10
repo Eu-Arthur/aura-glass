@@ -23,6 +23,17 @@ trap 'rm -rf "$scratch"' EXIT
 # config dir and a theme directory even though neither holds anything real.
 mkdir -p "$scratch/.config/aura-glass" "$scratch/.themes/Aura-Glass"
 
+if ! command -v gnome-shell >/dev/null 2>&1; then
+    mkdir -p "$scratch/bin"
+    cat > "$scratch/bin/gnome-shell" <<'STUB'
+#!/usr/bin/env bash
+echo "GNOME Shell 49.0"
+STUB
+    chmod +x "$scratch/bin/gnome-shell"
+    export PATH="$scratch/bin:$PATH"
+fi
+export XDG_CURRENT_DESKTOP="${XDG_CURRENT_DESKTOP:-ubuntu:GNOME}"
+
 in_scratch() {   # in_scratch FLAG...
     HOME="$scratch" bash "$ROOT/install.sh" --settings-only --dry-run --yes "$@"
 }

@@ -200,19 +200,22 @@ cmd_restore() {
     else
         # Match tag prefix or suffix
         local match
-        match="$(ls -1 "$BACKUP_DIR"/*"$target"*.tar.gz 2>/dev/null | head -n 1 || true)"
+        match="$(find "$BACKUP_DIR" -maxdepth 1 -name "*${target}*.tar.gz" -print 2>/dev/null | head -n 1 || true)"
         if [ -n "$match" ] && [ -f "$match" ]; then
             archive="$match"
         fi
     fi
 
-    [ -n "$archive" ] && [ -f "$archive" ] || die "backup archive not found: $target"
+    if [ -z "$archive" ] || [ ! -f "$archive" ]; then
+        die "backup archive not found: $target"
+    fi
 
     verify_archive "$archive"
 
     # Pre-restore safety snapshot if config exists
     if [ -d "$CONF_DIR" ] && [ -n "$(ls -A "$CONF_DIR" 2>/dev/null)" ]; then
-        local pre_snap="$BACKUP_DIR/pre-restore-$(date +"%Y%m%d_%H%M%S").tar.gz"
+        local pre_snap
+        pre_snap="$BACKUP_DIR/pre-restore-$(date +"%Y%m%d_%H%M%S").tar.gz"
         info "creating safety snapshot of current configuration..."
         collect_and_pack "$pre_snap"
     fi

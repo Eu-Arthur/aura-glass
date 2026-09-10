@@ -23,7 +23,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq gettext libglib2.0-bin
+          sudo apt-get install -y -qq gettext libglib2.0-bin shellcheck python3-gi
 
       - name: Validate syntax
         run: |

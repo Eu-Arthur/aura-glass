@@ -30,7 +30,8 @@ generate_gdm_wallpaper() {
     [ -f "$src" ] || return 1
 
     local memo_file="$CONF_DIR/gdm-wallpaper-memo"
-    local current_memo="$src:$(stat -c %Y "$src" 2>/dev/null || true)"
+    local current_memo
+    current_memo="$src:$(stat -c %Y "$src" 2>/dev/null || true)"
     if [ -f "$dst" ] && [ -s "$dst" ] && [ -f "$memo_file" ]; then
         if [ "$(read_memo "$memo_file")" = "$current_memo" ]; then
             return 0
@@ -283,6 +284,7 @@ install_gdm() {
 
         local gdm_log
         gdm_log="$(mktemp /tmp/aura-gdm-install.XXXXXX.log)"
+        # shellcheck disable=SC2024
         if sudo bash "$src/tweaks.sh" -g -b "$target_wall" -nb --silent-mode >"$gdm_log" 2>&1; then
             mkdir -p "$CONF_DIR"
             printf '%s\n' "dynamic" > "$CONF_DIR/gdm-installed"

@@ -34,7 +34,8 @@ sync_wallpaper() {
     local wall; wall="$(get_wallpaper)"
     [ -n "$wall" ] && [ -f "$wall" ] || return 0
 
-    local current_memo="$wall:$(stat -c %Y "$wall" 2>/dev/null || true)"
+    local current_memo
+    current_memo="$wall:$(stat -c %Y "$wall" 2>/dev/null || true)"
     if [ -f "$TARGET_WALL" ] && [ -s "$TARGET_WALL" ] && [ -f "$WALL_MEMO" ]; then
         local saved_memo=""
         IFS= read -r saved_memo < "$WALL_MEMO" 2>/dev/null || true

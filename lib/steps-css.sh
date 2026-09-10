@@ -21,7 +21,8 @@ TUNED_PPI=109
 
 # Logical PPI of the primary output, or nothing if it cannot be measured.
 measure_logical_ppi() {
-    local cache="/tmp/.aura-glass-ppi-$(id -u)"
+    local cache
+    cache="/tmp/.aura-glass-ppi-$(id -u)"
     if [ -r "$cache" ]; then
         local val
         IFS= read -r val < "$cache" 2>/dev/null || true
@@ -299,7 +300,8 @@ install_transparency_css() {
     fi
     local pct="$level"
     if [[ "$level" =~ ^([0-9]*)\.([0-9]+)$ ]]; then
-        local whole="${BASH_REMATCH[1]:-0}" frac="${BASH_REMATCH[2]}" f2="${frac:0:2}"
+        local whole="${BASH_REMATCH[1]:-0}" frac="${BASH_REMATCH[2]}"
+        local f2="${frac:0:2}"
         [ "${#f2}" -eq 1 ] && f2="${f2}0"
         local round_up=0
         [ "${frac:2:1}" -ge 5 ] 2>/dev/null && round_up=1

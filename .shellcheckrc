@@ -1,0 +1,10 @@
+# shellcheck configuration for aura-glass
+# Variables defined in modular library files and consumed by other sourced files
+disable=SC2034
+
+# Not following non-constant or relative source directives across directories
+disable=SC1090
+disable=SC1091
+
+# Allow word splitting for multi-package lists in package manager wrappers
+disable=SC2086

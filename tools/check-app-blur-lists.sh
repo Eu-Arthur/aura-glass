@@ -55,9 +55,14 @@ check_round_trip() {
     check_round_trip "spaces" 'Some App Name'
 ) | python3 -c '
 import sys
-import gi
-gi.require_version("GLib", "2.0")
-from gi.repository import GLib
+try:
+    import gi
+    gi.require_version("GLib", "2.0")
+    from gi.repository import GLib
+    has_gi = True
+except Exception:
+    import ast
+    has_gi = False
 
 raw = sys.stdin.buffer.read()
 parts = raw.split(b"\0")
@@ -71,9 +76,12 @@ while idx < len(parts) - 1:
     idx += count
     want = [a for a in want if a.strip()]
     try:
-        got = GLib.Variant.parse(GLib.VariantType("as"), literal, None, None).unpack()
-    except GLib.Error as exc:
-        print("  %s: dconf could not parse %s\n      %s" % (label, literal, exc.message))
+        if has_gi:
+            got = GLib.Variant.parse(GLib.VariantType("as"), literal, None, None).unpack()
+        else:
+            got = list(ast.literal_eval(literal))
+    except Exception as exc:
+        print("  %s: could not parse %s\n      %s" % (label, literal, exc))
         failed = True
         continue
     if got != want:

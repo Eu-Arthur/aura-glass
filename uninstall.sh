@@ -375,8 +375,12 @@ run rm -rf "$HOME/.local/share/aura-glass"
 run rm -f "$HOME/.local/share/applications/io.github.DevWebeloper.AuraGlassSettings.desktop"
 run rm -f "$HOME/.local/share/icons/hicolor/scalable/apps/io.github.DevWebeloper.AuraGlassSettings.svg"
 if [ "${DRY_RUN:-0}" != 1 ]; then
-    command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
-    command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -qft "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
+    if command -v update-desktop-database >/dev/null 2>&1; then
+        update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
+    fi
+    if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+        gtk-update-icon-cache -qft "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
+    fi
 fi
 run rm -f "$HOME/.local/share/bash-completion/completions/aura-glass" \
           "$HOME/.local/share/bash-completion/completions/install.sh" \

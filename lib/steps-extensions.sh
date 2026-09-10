@@ -183,7 +183,7 @@ install_bms() {
     # directories, so an overlay would leave both and load the wrong one.
     # Settings live in dconf, not here, so nothing is lost. This runs only
     # after the zip exists and has been checked.
-    rm -rf "$EXT_DIR/$BMS_UUID"
+    rm -rf "${EXT_DIR:?}/${BMS_UUID:?}"
     gnome-extensions install --force "$zip" >/dev/null \
         || die "installing Blur My Shell failed"
 
@@ -231,7 +231,7 @@ install_aura_ext() {
         return 0
     fi
 
-    rm -rf "$EXT_DIR/$uuid"
+    rm -rf "${EXT_DIR:?}/${uuid:?}"
     mkdir -p "$EXT_DIR"
     cp -a "$REPO_ROOT/extensions/$uuid" "$EXT_DIR/$uuid"
     ok "$uuid"
@@ -267,7 +267,7 @@ install_openbar() {
     git -C "$src" apply --whitespace=nowarn "$REPO_ROOT/patches/openbar-gnome50.patch" \
         || die "the Open Bar patch did not apply — upstream may have moved"
 
-    rm -rf "$EXT_DIR/$uuid"
+    rm -rf "${EXT_DIR:?}/${uuid:?}"
     mkdir -p "$EXT_DIR"
     cp -a "$src/$uuid" "$EXT_DIR/$uuid"
 
@@ -321,7 +321,7 @@ install_custom_osd() {
 
     # Upstream keeps the extension at the root of the repo rather than in a
     # directory named after the UUID, so this copies the checkout itself.
-    rm -rf "$EXT_DIR/$uuid"
+    rm -rf "${EXT_DIR:?}/${uuid:?}"
     mkdir -p "$EXT_DIR/$uuid"
     tar -C "$src" --exclude=.git --exclude=screens --exclude=po -cf - . \
         | tar -C "$EXT_DIR/$uuid" -xf -

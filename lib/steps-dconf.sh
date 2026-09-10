@@ -275,6 +275,7 @@ app_blur_covers_self() {
     local pattern="$1" matched=0 restore
     restore="$(shopt -p nocasematch)"
     shopt -s nocasematch
+    # shellcheck disable=SC2254
     case "$APP_BLUR_SELF" in
         $pattern) matched=1 ;;
     esac

@@ -763,9 +763,9 @@ EOF
     # on the machine, which is why the sizes are on the screen.
     printf '  Interface Font:\n'
     printf '    %s[1]%s System default %s[Default — whatever GNOME is using, left alone]%s\n' "$C_BLD" "$C_OFF" "$C_DIM" "$C_OFF"
-    printf '    %s[2]%s MiSans %s[Xiaomi’s interface font, Latin + Arabic — 7M download]%s\n' "$C_BLD" "$C_OFF" "$C_DIM" "$C_OFF"
+    printf '    %s[2]%s MiSans %s[Xiaomi'\''s interface font, Latin + Arabic — 7M download]%s\n' "$C_BLD" "$C_OFF" "$C_DIM" "$C_OFF"
     printf '    %s[3]%s Inter %s[The screen-first grotesque — 34M download]%s\n' "$C_BLD" "$C_OFF" "$C_DIM" "$C_OFF"
-    printf '    %s[4]%s San Francisco %s[Apple’s SF Pro, from a mirror — 49M download]%s\n' "$C_BLD" "$C_OFF" "$C_DIM" "$C_OFF"
+    printf '    %s[4]%s San Francisco %s[Apple'\''s SF Pro, from a mirror — 49M download]%s\n' "$C_BLD" "$C_OFF" "$C_DIM" "$C_OFF"
     printf '  Choice [1-4, default 1]: '
     read -r ans_font || ans_font="1"
     case "$ans_font" in
@@ -816,9 +816,9 @@ EOF
             printf '\n  %sSelect individual extensions:%s\n' "$C_BLD" "$C_OFF"
             for u in "${EXT_EXTRA_ALL[@]}"; do
                 # Pre-select recommended as default yes, others as default no
-                is_rec=0 def_hint="[y/N]" def_val="n"
+                def_hint="[y/N]" def_val="n"
                 for r in "${EXT_EXTRA_RECOMMENDED[@]}"; do
-                    if [ "$r" = "$u" ]; then is_rec=1; def_hint="[Y/n]"; def_val="y"; break; fi
+                    if [ "$r" = "$u" ]; then def_hint="[Y/n]"; def_val="y"; break; fi
                 done
                 printf '    Install %s %s? ' "$(ext_description "$u")" "$def_hint"
                 read -r ans_ext || ans_ext="$def_val"
@@ -1133,6 +1133,7 @@ if [ "$RADIUS_PRESET" = custom ]; then
         case "$_rc_val" in
             ''|*[!0-9]*) die "--radius-custom needs eight whole numbers of pixels, got '$RADIUS_CUSTOM'" ;;
         esac
+        _rc_min=0; _rc_max=0
         eval "_rc_min=\$RADIUS_MIN_$_rc_name; _rc_max=\$RADIUS_MAX_$_rc_name"
         if [ "$_rc_val" -lt "$_rc_min" ] || [ "$_rc_val" -gt "$_rc_max" ]; then
             die "--radius-custom: $_rc_name is $_rc_val, outside $_rc_min-$_rc_max"
@@ -1373,9 +1374,9 @@ if [ "$WANT_DEPS" = 1 ]; then
     install_deps || die "dependencies are missing — re-run once they are installed, or pass --no-deps to try anyway"
 else
     step "Checking dependencies"
-    missing="$(missing_cmds | tr '\n' ' ')"
-    if [ -n "${missing// /}" ]; then
-        warn "missing (--no-deps given, continuing): $missing"
+    missing_list="$(missing_cmds | tr '\n' ' ')"
+    if [ -n "${missing_list// /}" ]; then
+        warn "missing (--no-deps given, continuing): $missing_list"
     else
         ok "all present"
     fi
