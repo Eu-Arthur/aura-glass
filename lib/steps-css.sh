@@ -130,7 +130,7 @@ PY
 apply_app_tint_color() {
     local want="${APP_TINT_COLOR:-}" memo="$CONF_DIR/app-tint-color"
     if [ -z "$want" ] && [ -r "$memo" ]; then
-        want="$(cat "$memo" 2>/dev/null || true)"
+        want="$(read_memo "$memo")"
     fi
     [ -n "$want" ] || return 0
 
@@ -167,7 +167,7 @@ apply_app_tint_color() {
 apply_shell_tint_color() {
     local want="${SHELL_TINT_COLOR:-}" memo="$CONF_DIR/shell-tint-color"
     if [ -z "$want" ] && [ -r "$memo" ]; then
-        want="$(cat "$memo" 2>/dev/null || true)"
+        want="$(read_memo "$memo")"
     fi
     [ -n "$want" ] || return 0
 
@@ -216,7 +216,7 @@ NOTIFICATION_OPACITY_MAX=85
 apply_notification_opacity() {
     local want="${NOTIFICATION_OPACITY:-}" memo="$CONF_DIR/notification-opacity"
     if [ -z "$want" ] && [ -r "$memo" ]; then
-        want="$(cat "$memo" 2>/dev/null || true)"
+        want="$(read_memo "$memo")"
     fi
     [ -n "$want" ] || return 0
 
@@ -364,7 +364,7 @@ apply_radius_css() {
 install_window_control_style() {
     local want="${TITLEBUTTON_STYLE:-}" memo="$CONF_DIR/titlebutton-style"
     if [ -z "$want" ] && [ -f "$memo" ]; then
-        want="$(cat "$memo" 2>/dev/null || true)"
+        want="$(read_memo "$memo")"
     fi
     [ -n "$want" ] || want="minimal"
 
@@ -416,12 +416,10 @@ install_css() {
     # The shell and gtk4 sheets are split by concern, and the numeric prefix is
     # the cascade order aura-glass-apply concatenates them in. Copy whatever
     # css/ actually holds rather than naming each one twice.
-    local sheet
-    for sheet in "$REPO_ROOT"/css/shell-[0-9][0-9]-*.css \
-                 "$REPO_ROOT"/css/gtk4-[0-9][0-9]-*.css; do
-        run install -Dm644 "$sheet" "$CONF_DIR/$(basename "$sheet")"
-    done
-    run install -Dm644 "$REPO_ROOT/css/gtk3-tweaks.css"  "$CONF_DIR/gtk3-tweaks.css"
+    run mkdir -p "$CONF_DIR"
+    run cp -p "$REPO_ROOT"/css/shell-[0-9][0-9]-*.css \
+              "$REPO_ROOT"/css/gtk4-[0-9][0-9]-*.css \
+              "$REPO_ROOT/css/gtk3-tweaks.css" "$CONF_DIR/"
     run install -Dm755 "$REPO_ROOT/bin/aura-glass-apply" "$HOME/.local/bin/aura-glass-apply"
     ln -sf "$HOME/.local/bin/aura-glass-apply" "$HOME/.local/bin/tahoe-glass-apply" 2>/dev/null || true
 

@@ -38,7 +38,10 @@ STATE="$CONF_DIR/update-available"
 NOTIFY=0
 [ "${1:-}" = "--notify" ] && NOTIFY=1
 
-REPO="$(cat "$CONF_DIR/repo-path" 2>/dev/null || true)"
+REPO=""
+if [ -r "$CONF_DIR/repo-path" ]; then
+    IFS= read -r REPO < "$CONF_DIR/repo-path" 2>/dev/null || REPO=""
+fi
 if [ -z "$REPO" ] || [ ! -d "$REPO/.git" ]; then
     echo "aura-glass-update-check: no git checkout recorded in $CONF_DIR/repo-path" >&2
     exit 1

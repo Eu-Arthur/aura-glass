@@ -121,7 +121,7 @@ merge_backups() {
 
     for f in "$from"/*; do
         [ -e "$f" ] || continue
-        base="$(basename "$f")"
+        base="${f##*/}"
         cp -a "$f" "$to/$base"
 
         case "$base" in
@@ -137,7 +137,7 @@ merge_fill_gaps() {
     local from="$1" to="$2" f base m skip
     for f in "$from"/*; do
         [ -e "$f" ] || continue
-        base="$(basename "$f")"
+        base="${f##*/}"
         [ "$base" = backups ] && continue
 
         skip=0
@@ -174,7 +174,7 @@ migrate_dir() {
         local f base
         for f in "$from"/*; do
             [ -e "$f" ] || continue
-            base="$(basename "$f")"
+            base="${f##*/}"
             [ "$base" = backups ] && continue
             cp -a "$f" "$to/$base"
         done

@@ -32,7 +32,7 @@ generate_gdm_wallpaper() {
     local memo_file="$CONF_DIR/gdm-wallpaper-memo"
     local current_memo="$src:$(stat -c %Y "$src" 2>/dev/null || true)"
     if [ -f "$dst" ] && [ -s "$dst" ] && [ -f "$memo_file" ]; then
-        if [ "$(cat "$memo_file" 2>/dev/null)" = "$current_memo" ]; then
+        if [ "$(read_memo "$memo_file")" = "$current_memo" ]; then
             return 0
         fi
     fi

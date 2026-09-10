@@ -73,16 +73,16 @@ fi
 # 2. Shell test scripts
 printf '\n%s[2/3] Shell Test Suites%s\n' "$C_CYA" "$C_OFF"
 for t in "$TOOLS_DIR"/check-*.sh; do
-    [ "$(basename "$t")" = "check-all.sh" ] && continue
+    [ "${t##*/}" = "check-all.sh" ] && continue
     [ -f "$t" ] || continue
-    run_test "$(basename "$t")" bash "$t"
+    run_test "${t##*/}" bash "$t"
 done
 
 # 3. Python test suites
 printf '\n%s[3/3] Python Test Suites%s\n' "$C_CYA" "$C_OFF"
 for t in "$TOOLS_DIR"/check-*.py; do
     [ -f "$t" ] || continue
-    run_test "$(basename "$t")" python3 "$t"
+    run_test "${t##*/}" python3 "$t"
 done
 
 end_time=$(date +%s)

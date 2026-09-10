@@ -67,7 +67,7 @@ if [ ! -r "$CONF_DIR/repo-path" ]; then
     printf 'aura-glass-preview: %s/repo-path is missing — nothing installed to preview against.\n' "$CONF_DIR" >&2
     exit 1
 fi
-REPO_ROOT="$(cat "$CONF_DIR/repo-path")"
+IFS= read -r REPO_ROOT < "$CONF_DIR/repo-path"
 if [ ! -d "$REPO_ROOT" ]; then
     printf 'aura-glass-preview: the checkout at %s is gone.\n' "$REPO_ROOT" >&2
     exit 1
@@ -300,11 +300,11 @@ cmd_revert() {
     # mid-preview, say).
     local sheet base
     for sheet in "$CONF_DIR"/shell-*.css "$CONF_DIR"/gtk4-*.css "$CONF_DIR/gtk3-tweaks.css"; do
-        base="$(basename "$sheet")"
+        base="${sheet##*/}"
         [ -f "$BACKUP/$base" ] || rm -f "$sheet"
     done
     for sheet in "$BACKUP"/*.css; do
-        [ -f "$sheet" ] && cp -a "$sheet" "$CONF_DIR/$(basename "$sheet")"
+        [ -f "$sheet" ] && cp -a "$sheet" "$CONF_DIR/${sheet##*/}"
     done
 
     dconf reset -f "$BMS/"

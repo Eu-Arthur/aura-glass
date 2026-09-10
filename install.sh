@@ -435,7 +435,7 @@ migrate_legacy_names
 
 # Resolve remembered accent or default
 if [ -z "$ACCENT" ] && [ -r "$CONF_DIR/accent" ]; then
-    ACCENT="$(cat "$CONF_DIR/accent" 2>/dev/null || true)"
+    ACCENT="$(read_memo "$CONF_DIR/accent")"
 fi
 ACCENT="${ACCENT:-$ACCENT_DEFAULT}"
 
@@ -960,7 +960,7 @@ if [ -n "$EXT_LIST_EXPLICIT" ]; then
 fi
 
 if [ -z "$CURSORS" ] && [ -r "$CONF_DIR/cursor-pack" ]; then
-    CURSORS="$(cat "$CONF_DIR/cursor-pack" 2>/dev/null || true)"
+    CURSORS="$(read_memo "$CONF_DIR/cursor-pack")"
 fi
 # A remembered "keep" is what --no-cursors wrote: the pointer is not ours to
 # set, so a later run that was given no flag of its own must not set it either.
@@ -992,7 +992,7 @@ if [ -n "$CURSOR_SIZE_EXPLICIT" ]; then
 fi
 
 if [ -z "$ICONS" ] && [ -r "$CONF_DIR/icon-pack" ]; then
-    ICONS="$(cat "$CONF_DIR/icon-pack" 2>/dev/null || true)"
+    ICONS="$(read_memo "$CONF_DIR/icon-pack")"
 fi
 # The same for the icons, and the same reason.
 if [ "$ICONS" = keep ]; then
@@ -1006,7 +1006,7 @@ ICONS="${ICONS:-colloid}"
 # has never been given --font reads the memo, finds nothing, and leaves the keys
 # where they are.
 if [ -z "$FONT" ] && [ -r "$CONF_DIR/font" ]; then
-    FONT="$(cat "$CONF_DIR/font" 2>/dev/null || true)"
+    FONT="$(read_memo "$CONF_DIR/font")"
 fi
 FONT="${FONT:-system}"
 case " $VALID_FONTS " in
@@ -1024,7 +1024,7 @@ if [ "${WANT_BLUR:-1}" = 0 ]; then
     APP_OPACITY=255
 elif [ -z "$APP_TRANSPARENCY" ]; then
     if [ -r "$CONF_DIR/app-transparency" ]; then
-        APP_TRANSPARENCY="$(cat "$CONF_DIR/app-transparency" 2>/dev/null || true)"
+        APP_TRANSPARENCY="$(read_memo "$CONF_DIR/app-transparency")"
     elif [ "${WANT_WINDOW_BLUR:-1}" = 0 ]; then
         APP_TRANSPARENCY=0.95
     else
@@ -1044,10 +1044,10 @@ fi
 # anyone passed were the three buckets, whose remembered opacity already matched.
 if [ -z "$APP_OPACITY" ] && [ -z "$APP_OPACITY_EXPLICIT" ] \
    && [ -r "$CONF_DIR/app-opacity" ]; then
-    APP_OPACITY="$(cat "$CONF_DIR/app-opacity" 2>/dev/null || true)"
+    APP_OPACITY="$(read_memo "$CONF_DIR/app-opacity")"
 fi
 if [ -z "$APP_BLUR_SCOPE_EXPLICIT" ] && [ -r "$CONF_DIR/app-blur-scope" ]; then
-    APP_BLUR_SCOPE="$(cat "$CONF_DIR/app-blur-scope" 2>/dev/null || true)"
+    APP_BLUR_SCOPE="$(read_memo "$CONF_DIR/app-blur-scope")"
 fi
 APP_BLUR_SCOPE="${APP_BLUR_SCOPE:-gtk}"
 
@@ -1076,7 +1076,7 @@ fi
 [ -n "$RADIUS_CUSTOM_EXPLICIT" ] && { RADIUS_PRESET="custom"; RADIUS_PRESET_EXPLICIT=1; }
 
 if [ -z "$PANEL_BLUR_FIX_EXPLICIT" ] && [ -r "$CONF_DIR/panel-blur-fix" ]; then
-    WANT_PANEL_BLUR_FIX="$(cat "$CONF_DIR/panel-blur-fix" 2>/dev/null || true)"
+    WANT_PANEL_BLUR_FIX="$(read_memo "$CONF_DIR/panel-blur-fix")"
 fi
 # Neither a flag nor a memo: the agent exists for layouts that change, so a
 # machine with more than one screen gets it and a single screen is left alone.
@@ -1089,14 +1089,14 @@ if [ -z "$WANT_PANEL_BLUR_FIX" ]; then
 fi
 
 if [ -z "$RADIUS_PRESET_EXPLICIT" ] && [ -r "$CONF_DIR/radius-preset" ]; then
-    RADIUS_PRESET="$(cat "$CONF_DIR/radius-preset" 2>/dev/null || true)"
+    RADIUS_PRESET="$(read_memo "$CONF_DIR/radius-preset")"
 fi
 RADIUS_PRESET="${RADIUS_PRESET:-default}"
 
 if [ "$RADIUS_PRESET" = custom ]; then
     # The eight values, from the flag or from the memo the last one wrote.
     if [ -z "$RADIUS_CUSTOM_EXPLICIT" ] && [ -r "$CONF_DIR/radius-custom" ]; then
-        RADIUS_CUSTOM="$(cat "$CONF_DIR/radius-custom" 2>/dev/null || true)"
+        RADIUS_CUSTOM="$(read_memo "$CONF_DIR/radius-custom")"
         # A memo written before TOKEN_RADIUS_BUTTON existed holds seven
         # fields. Filled in here rather than rejected: the button column did
         # not exist when this memo was written, so a run that never asked for

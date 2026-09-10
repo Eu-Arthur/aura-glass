@@ -175,8 +175,7 @@ install_update_check() {
     # it back on over a deliberate --no-update-check.
     local want="${WANT_UPDATE_CHECK:-1}"
     if [ -z "${UPDATE_CHECK_EXPLICIT:-}" ] && [ -r "$memo" ]; then
-        want="$(cat "$memo" 2>/dev/null || true)"
-        want="${want:-1}"
+        want="$(read_memo "$memo" 1)"
     fi
 
     # The check reads $CONF_DIR/repo-path and asks git about the checkout there,

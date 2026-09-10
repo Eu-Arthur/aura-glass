@@ -103,7 +103,7 @@ install_bms() {
     # ./uninstall.sh --extensions removes the extension but leaves $CONF_DIR.
     if [ "${FORCE:-0}" != 1 ] \
        && [ -f "$EXT_DIR/$BMS_UUID/components/popup/index.js" ] \
-       && [ "$(cat "$CONF_DIR/bms-ref" 2>/dev/null || true)" = "$BMS_REF" ] \
+       && [ "$(read_memo "$CONF_DIR/bms-ref")" = "$BMS_REF" ] \
        && patch_stamp_current bms-overview-patch "$REPO_ROOT/patches/$BMS_PATCH" \
        && patch_stamp_current bms-subwindow-patch "$REPO_ROOT/patches/$BMS_SUBWIN_PATCH" \
        && patch_stamp_current bms-notification-patch "$REPO_ROOT/patches/$BMS_NOTIF_PATCH" \

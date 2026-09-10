@@ -396,7 +396,7 @@ if [ -d "$SD" ]; then
     cur=${cur#\'}; cur=${cur%\'}
     if [ -n "$cur" ]; then
         GSETTINGS_SCHEMA_DIR="$SD" gsettings set org.gnome.shell.extensions.user-theme name ''
-        sleep 1
+        sleep 0.15
         GSETTINGS_SCHEMA_DIR="$SD" gsettings set org.gnome.shell.extensions.user-theme name "$cur"
         echo "shell theme reloaded ($cur)"
     fi

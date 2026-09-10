@@ -24,6 +24,18 @@ run() {
     "$@"
 }
 
+# read_memo FILE [DEFAULT] — reads the first line of FILE using bash builtins,
+# avoiding an external process fork of /usr/bin/cat.
+read_memo() {
+    local f="$1" def="${2:-}" val
+    if [ -r "$f" ]; then
+        IFS= read -r val < "$f" 2>/dev/null || val="$def"
+        printf '%s\n' "$val"
+    else
+        printf '%s\n' "$def"
+    fi
+}
+
 # Whether this run may leave a $CONF_DIR memo behind.
 #
 # A dry run may not, for the obvious reason. A preview may not for a subtler
@@ -134,7 +146,7 @@ prompt_logout() {
 patch_stamp_current() {
     local name="$1" patch="$2"
     [ -r "$CONF_DIR/$name" ] || return 1
-    [ "$(cat "$CONF_DIR/$name" 2>/dev/null)" = "$(sha256sum "$patch" | cut -d' ' -f1)" ]
+    [ "$(read_memo "$CONF_DIR/$name")" = "$(sha256sum "$patch" | cut -d' ' -f1)" ]
 }
 patch_stamp_write() {
     local name="$1" patch="$2"

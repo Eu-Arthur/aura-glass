@@ -46,7 +46,7 @@ resolve_glass_mode() {
     if [ -f "$CONF_DIR/styling-off" ]; then GLASS_MODE="solid"; return 0; fi
 
     if [ -r "$CONF_DIR/glass-mode" ]; then
-        GLASS_MODE="$(cat "$CONF_DIR/glass-mode" 2>/dev/null || true)"
+        GLASS_MODE="$(read_memo "$CONF_DIR/glass-mode")"
         case " $VALID_GLASS_MODES " in
             *" $GLASS_MODE "*) return 0 ;;
         esac
@@ -161,9 +161,7 @@ remember_glass_mode() {
 mode_memo_path() { printf '%s/modes/%s/%s\n' "$CONF_DIR" "${GLASS_MODE:-frosted}" "$1"; }
 
 mode_memo_read() {   # KEY DEFAULT
-    local f; f="$(mode_memo_path "$1")"
-    if [ -r "$f" ]; then cat "$f" 2>/dev/null || printf '%s\n' "$2"
-    else printf '%s\n' "$2"; fi
+    read_memo "$(mode_memo_path "$1")" "$2"
 }
 
 mode_memo_write() {  # KEY VALUE
@@ -185,15 +183,15 @@ seed_glass_mode() {
 
     local disk_level disk_app disk_shell disk_strength disk_scope disk_popup disk_notification
     local disk_brightness disk_ground
-    disk_level="$(cat "$CONF_DIR/app-transparency" 2>/dev/null || true)"
-    disk_app="$(cat "$CONF_DIR/app-tint-color" 2>/dev/null || true)"
-    disk_shell="$(cat "$CONF_DIR/shell-tint-color" 2>/dev/null || true)"
-    disk_strength="$(cat "$CONF_DIR/blur-strength" 2>/dev/null || true)"
-    disk_scope="$(cat "$CONF_DIR/app-blur-scope" 2>/dev/null || true)"
-    disk_popup="$(cat "$CONF_DIR/popup-blur" 2>/dev/null || true)"
-    disk_notification="$(cat "$CONF_DIR/notification-blur" 2>/dev/null || true)"
-    disk_brightness="$(cat "$CONF_DIR/popup-brightness" 2>/dev/null || true)"
-    disk_ground="$(cat "$CONF_DIR/notification-opacity" 2>/dev/null || true)"
+    disk_level="$(read_memo "$CONF_DIR/app-transparency")"
+    disk_app="$(read_memo "$CONF_DIR/app-tint-color")"
+    disk_shell="$(read_memo "$CONF_DIR/shell-tint-color")"
+    disk_strength="$(read_memo "$CONF_DIR/blur-strength")"
+    disk_scope="$(read_memo "$CONF_DIR/app-blur-scope")"
+    disk_popup="$(read_memo "$CONF_DIR/popup-blur")"
+    disk_notification="$(read_memo "$CONF_DIR/notification-blur")"
+    disk_brightness="$(read_memo "$CONF_DIR/popup-brightness")"
+    disk_ground="$(read_memo "$CONF_DIR/notification-opacity")"
 
     if [ "${GLASS_MODE:-}" = transparent ]; then
         # Unconditional, not a fallback for an empty disk_level: the shared
