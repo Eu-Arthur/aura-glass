@@ -89,7 +89,8 @@ sync_gdm_monitors() {
     else
         sudo mkdir -p /etc/xdg
         sudo cp -f "$user_monitors" /etc/xdg/monitors.xml
-        sudo chmod 666 /etc/xdg/monitors.xml || sudo chmod 644 /etc/xdg/monitors.xml
+        sudo chown "$USER:" /etc/xdg/monitors.xml 2>/dev/null || true
+        sudo chmod 644 /etc/xdg/monitors.xml
         synced=1
     fi
 
@@ -103,14 +104,16 @@ sync_gdm_monitors() {
                 sudo mkdir -p "$gdm_dir/.config"
                 sudo cp -f "$user_monitors" "$gdm_dir/.config/monitors.xml"
                 sudo chmod 755 "$gdm_dir/.config"
-                sudo chmod 666 "$gdm_dir/.config/monitors.xml" || sudo chmod 644 "$gdm_dir/.config/monitors.xml"
+                sudo chown "$USER:" "$gdm_dir/.config/monitors.xml" 2>/dev/null || true
+                sudo chmod 644 "$gdm_dir/.config/monitors.xml"
 
                 # If seat0 exists (GNOME 46+ dynamic seat sessions), also populate seat config dirs
                 if [ -d "$gdm_dir/seat0" ]; then
                     sudo mkdir -p "$gdm_dir/seat0/config" "$gdm_dir/seat0/.config" 2>/dev/null || true
                     sudo cp -f "$user_monitors" "$gdm_dir/seat0/config/monitors.xml" 2>/dev/null || true
                     sudo cp -f "$user_monitors" "$gdm_dir/seat0/.config/monitors.xml" 2>/dev/null || true
-                    sudo chmod 666 "$gdm_dir/seat0/config/monitors.xml" "$gdm_dir/seat0/.config/monitors.xml" 2>/dev/null || true
+                    sudo chown "$USER:" "$gdm_dir/seat0/config/monitors.xml" "$gdm_dir/seat0/.config/monitors.xml" 2>/dev/null || true
+                    sudo chmod 644 "$gdm_dir/seat0/config/monitors.xml" "$gdm_dir/seat0/.config/monitors.xml" 2>/dev/null || true
                 fi
                 synced=1
             fi
@@ -208,14 +211,17 @@ install_gdm() {
         info "dry-run: generate $target_wall from $cur_wall and make writable for live wallpaper sync"
     else
         sudo mkdir -p /usr/share/backgrounds
-        local tmp_init="/tmp/aura-gdm-init.png"
+        local tmp_init
+        tmp_init="$(mktemp /tmp/aura-gdm-init.XXXXXX.png)"
         if [ -n "$cur_wall" ] && generate_gdm_wallpaper "$cur_wall" "$tmp_init"; then
             sudo cp -f "$tmp_init" "$target_wall"
             rm -f "$tmp_init"
         else
+            rm -f "$tmp_init"
             sudo touch "$target_wall"
         fi
-        sudo chmod 666 "$target_wall"
+        sudo chown "$USER:" "$target_wall"
+        sudo chmod 644 "$target_wall"
         ok "GDM background configured from desktop wallpaper ($target_wall)"
     fi
 
@@ -240,11 +246,13 @@ install_gdm() {
         info "Compiling and applying GDM theme..."
         sudo -v || { warn "sudo authentication required for GDM installation"; return 1; }
 
-        local gdm_log="/tmp/aura-gdm-install.log"
+        local gdm_log
+        gdm_log="$(mktemp /tmp/aura-gdm-install.XXXXXX.log)"
         if sudo bash "$src/tweaks.sh" -g -b "$target_wall" -nb --silent-mode >"$gdm_log" 2>&1; then
             mkdir -p "$CONF_DIR"
             printf '%s\n' "dynamic" > "$CONF_DIR/gdm-installed"
             ok "GDM login screen theme installed (dynamic wallpaper sync)"
+            rm -f "$gdm_log"
         else
             warn "GDM theme installation failed (log: $gdm_log)"
             if [ -f "$gdm_log" ]; then
@@ -252,6 +260,7 @@ install_gdm() {
                     warn "  $err_line"
                 done
             fi
+            rm -f "$gdm_log"
             return 1
         fi
     fi

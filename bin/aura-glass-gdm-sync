@@ -26,8 +26,9 @@ sync_wallpaper() {
     local wall; wall="$(get_wallpaper)"
     [ -n "$wall" ] && [ -f "$wall" ] || return 0
 
-    local tmp="/tmp/aura-gdm-sync-$$.png"
-    python3 - "$wall" "$tmp" <<'PY' || return 0
+    local tmp
+    tmp="$(mktemp /tmp/aura-gdm-sync.XXXXXX.png)"
+    if ! python3 - "$wall" "$tmp" <<'PY'
 import os, sys, urllib.parse, subprocess
 from PIL import Image, ImageFilter, ImageEnhance
 
@@ -67,9 +68,13 @@ except Exception:
     except Exception:
         sys.exit(1)
 PY
+    then
+        rm -f "$tmp"
+        return 0
+    fi
 
     if [ -f "$tmp" ]; then
-        mv -f "$tmp" "$TARGET_WALL" 2>/dev/null || cp -f "$tmp" "$TARGET_WALL" 2>/dev/null || true
+        cp -f "$tmp" "$TARGET_WALL" 2>/dev/null || cat "$tmp" > "$TARGET_WALL" 2>/dev/null || true
         rm -f "$tmp"
     fi
 }
