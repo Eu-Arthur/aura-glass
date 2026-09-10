@@ -12,6 +12,13 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 . "$REPO_ROOT/lib/common.sh"
+
+if [ "$(id -u)" -eq 0 ]; then
+    printf '\n%s! Error: Do not run install.sh as root or with sudo.%s\n' "${C_RED:-}" "${C_OFF:-}" >&2
+    printf '  Desktop themes, extensions and settings belong to your regular user account.\n' >&2
+    printf '  The installer will prompt for sudo automatically only when system tasks require it.\n\n' >&2
+    exit 1
+fi
 # shellcheck source=lib/distro.sh
 . "$REPO_ROOT/lib/distro.sh"
 # The steps were one file until they were split by concern, the same way css/

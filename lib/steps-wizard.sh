@@ -44,6 +44,7 @@ run_setup_wizard() {
 
     local out rc=0
     out="$(mktemp)" || return 2
+    trap 'rm -f "$out" 2>/dev/null || true' INT TERM
 
     step "Setup"
     info "opening the setup wizard — this terminal continues once it closes"
@@ -56,16 +57,19 @@ run_setup_wizard() {
 
     if [ "$rc" = 2 ]; then
         rm -f "$out"
+        trap - INT TERM
         return 1
     fi
     if [ "$rc" != 0 ]; then
         rm -f "$out"
+        trap - INT TERM
         warn "the setup wizard exited unexpectedly — asking here instead"
         return 2
     fi
 
     mapfile -t WIZARD_ARGS < "$out"
     rm -f "$out"
+    trap - INT TERM
 
     # A run that answered everything and produced nothing is the wizard being
     # broken rather than a user choosing an empty install. The terminal asks.

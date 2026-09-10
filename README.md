@@ -152,7 +152,7 @@ For scripted setups or power users who prefer flags instead of the interactive w
 ./install.sh --glass-mode solid -y
 
 # 4. Apply GDM login screen theme
-sudo ./install.sh --gdm
+./install.sh --gdm
 
 # 5. Sharper corners, without reinstalling anything else
 ./install.sh --settings-only --radius-preset sharp -y

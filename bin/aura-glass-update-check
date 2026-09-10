@@ -135,7 +135,9 @@ main|master|HEAD|"")
 esac
 
 mkdir -p "$CONF_DIR"
-printf '%s\n' "$remote_version" > "$STATE"
+tmp_state="$(mktemp "$CONF_DIR/update-available.XXXXXX")"
+printf '%s\n' "$remote_version" > "$tmp_state"
+mv -f "$tmp_state" "$STATE"
 echo "update available: $local_version -> $remote_version"
 
 if [ "$NOTIFY" = 1 ] && command -v notify-send >/dev/null 2>&1; then
