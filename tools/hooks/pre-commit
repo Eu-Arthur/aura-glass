@@ -137,6 +137,14 @@ step "update check (tools/check-update-check.sh)" \
 # answer, because nothing else would notice them drifting apart.
 step "update channel (tools/check-update-channel.py)" \
     python3 "$TMP/tools/check-update-channel.py"
+step "doctor diagnostics (tools/check-doctor.sh)" \
+    bash "$TMP/tools/check-doctor.sh"
+step "shell completions (tools/check-completions.sh)" \
+    bash "$TMP/tools/check-completions.sh"
+step "profile backup tool (tools/check-backup.sh)" \
+    bash "$TMP/tools/check-backup.sh"
+step "mode switcher (tools/check-mode.sh)" \
+    bash "$TMP/tools/check-mode.sh"
 
 printf '\n'
 if [ "$fail" = 1 ]; then

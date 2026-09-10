@@ -360,6 +360,9 @@ run rm -f "$HOME/.local/bin/aura-glass-apply" "$HOME/.local/bin/aura-glass-icon-
           "$HOME/.local/bin/aura-glass-settings" \
           "$HOME/.local/bin/aura-glass-preview" \
           "$HOME/.local/bin/aura-glass-ext" \
+          "$HOME/.local/bin/aura-glass-doctor" \
+          "$HOME/.local/bin/aura-glass-backup" \
+          "$HOME/.local/bin/aura-glass-mode" \
           "$HOME/.local/bin/aura-glass-open-once" \
           "$HOME/.local/bin/tahoe-glass-apply" "$HOME/.local/bin/tahoe-glass-icon-sync" \
           "$HOME/.local/bin/tahoe-glass-panel-blur" "$HOME/.local/bin/tahoe-glass-gdm-sync"
@@ -379,7 +382,20 @@ run rm -f "$HOME/.local/share/bash-completion/completions/aura-glass" \
           "$HOME/.local/share/bash-completion/completions/install.sh" \
           "$HOME/.local/share/bash-completion/completions/uninstall.sh" \
           "$HOME/.local/share/bash-completion/completions/aura-glass-apply" \
-          "$HOME/.local/share/bash-completion/completions/aura-glass-ext"
+          "$HOME/.local/share/bash-completion/completions/aura-glass-ext" \
+          "$HOME/.local/share/bash-completion/completions/aura-glass-doctor" \
+          "$HOME/.local/share/bash-completion/completions/aura-glass-backup" \
+          "$HOME/.local/share/bash-completion/completions/aura-glass-mode" \
+          "$HOME/.local/share/bash-completion/completions/aura-glass-update-check" \
+          "$HOME/.local/share/zsh/site-functions/_aura-glass" \
+          "$HOME/.config/fish/completions/aura-glass.fish" \
+          "$HOME/.config/fish/completions/install.sh.fish" \
+          "$HOME/.config/fish/completions/aura-glass-apply.fish" \
+          "$HOME/.config/fish/completions/aura-glass-ext.fish" \
+          "$HOME/.config/fish/completions/aura-glass-doctor.fish" \
+          "$HOME/.config/fish/completions/aura-glass-backup.fish" \
+          "$HOME/.config/fish/completions/aura-glass-mode.fish" \
+          "$HOME/.config/fish/completions/aura-glass-update-check.fish"
 # The open-once autostart entry, if an install armed it and no login has spent
 # it yet. Left behind it would open a window that is no longer installed, on
 # every login, forever — the entry only deletes itself when it manages to run.

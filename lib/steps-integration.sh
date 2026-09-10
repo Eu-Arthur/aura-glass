@@ -141,13 +141,40 @@ install_panel_blur_unit() {
     ok "panel blur rebuilds on every monitor change, and once at login"
 }
 
-install_completions() {
-    local comp_dir="$HOME/.local/share/bash-completion/completions"
-    run mkdir -p "$comp_dir"
-    run install -Dm644 "$REPO_ROOT/completions/aura-glass.bash" "$comp_dir/aura-glass"
-    run ln -sf "aura-glass" "$comp_dir/install.sh" 2>/dev/null || true
-    run ln -sf "aura-glass" "$comp_dir/uninstall.sh" 2>/dev/null || true
-    run ln -sf "aura-glass" "$comp_dir/aura-glass-apply" 2>/dev/null || true
-    run ln -sf "aura-glass" "$comp_dir/aura-glass-ext" 2>/dev/null || true
-    ok "shell autocompletion installed (~/.local/share/bash-completion/completions/aura-glass)"
+install_cli_tools() {
+    for tool in aura-glass-ext aura-glass-doctor aura-glass-backup aura-glass-mode; do
+        if [ -f "$REPO_ROOT/bin/$tool" ]; then
+            run install -Dm755 "$REPO_ROOT/bin/$tool" "$HOME/.local/bin/$tool"
+        fi
+    done
 }
+
+install_completions() {
+    install_cli_tools
+
+    # Bash completions
+    local bash_dir="$HOME/.local/share/bash-completion/completions"
+    run mkdir -p "$bash_dir"
+    run install -Dm644 "$REPO_ROOT/completions/aura-glass.bash" "$bash_dir/aura-glass"
+    for target in install.sh uninstall.sh aura-glass-apply aura-glass-ext aura-glass-doctor \
+                  aura-glass-backup aura-glass-mode aura-glass-update-check; do
+        run ln -sf "aura-glass" "$bash_dir/$target" 2>/dev/null || true
+    done
+
+    # Zsh completions
+    local zsh_dir="$HOME/.local/share/zsh/site-functions"
+    run mkdir -p "$zsh_dir"
+    run install -Dm644 "$REPO_ROOT/completions/_aura-glass" "$zsh_dir/_aura-glass"
+
+    # Fish completions
+    local fish_dir="$HOME/.config/fish/completions"
+    run mkdir -p "$fish_dir"
+    run install -Dm644 "$REPO_ROOT/completions/aura-glass.fish" "$fish_dir/aura-glass.fish"
+    for target in install.sh aura-glass-apply aura-glass-ext aura-glass-doctor \
+                  aura-glass-backup aura-glass-mode aura-glass-update-check; do
+        run ln -sf "aura-glass.fish" "$fish_dir/${target}.fish" 2>/dev/null || true
+    done
+
+    ok "shell autocompletions installed (Bash, Zsh, Fish)"
+}
+

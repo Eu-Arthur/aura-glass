@@ -1,0 +1,188 @@
+#compdef install.sh uninstall.sh aura-glass-apply aura-glass-ext aura-glass-doctor aura-glass-update-check aura-glass-backup aura-glass-mode
+
+# Zsh completion for Aura Glass suite
+
+_aura_glass_install() {
+    _arguments -s \
+        '--full[Install full suite with all extensions and extras]' \
+        '--extras[Install extra extensions]' \
+        '--no-extras[Skip extra extensions]' \
+        '--accent[Set theme accent color]:accent:(blue teal green yellow orange red pink purple slate)' \
+        '--glass-mode[Set glass transparency mode]:glass mode:(frosted transparent solid)' \
+        '--blur-mode[Alias for --glass-mode]:glass mode:(frosted transparent solid)' \
+        '--radius-preset[Set corner radius preset]:radius preset:(flat sharp adwaita soft medium default rounded custom)' \
+        '--font[Select interface font]:font:(system inter misans sf-pro)' \
+        '--icons[Select icon theme]:icon pack:(colloid reversal mactahoe hatter keep original)' \
+        '--cursors[Select cursor theme]:cursor theme:(aosp mactahoe keep original)' \
+        '--blur[Enable blur effect]' \
+        '--no-blur[Disable blur effect]' \
+        '--popup-blur[Enable popup blur]' \
+        '--no-popup-blur[Disable popup blur]' \
+        '--static-popup-blur[Use static blur for popups]' \
+        '--notification-blur[Enable notification blur]' \
+        '--no-notification-blur[Disable notification blur]' \
+        '--app-transparency[Set application window transparency (0.0 - 1.0)]:opacity:(0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0)' \
+        '--panel-transparency[Set top panel transparency (0.0 - 1.0)]:opacity:(0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0)' \
+        '--gdm[Configure GDM login screen blur and styling]' \
+        '--no-gdm[Skip GDM login screen configuration]' \
+        '--gdm-monitors[Sync monitors.xml to GDM configuration]' \
+        '--reinstall[Force reinstallation of all components]' \
+        '--update[Update existing Aura Glass installation]' \
+        '(-n --dry-run)'{-n,--dry-run}'[Simulate execution without modifying system]' \
+        '--interactive[Prompt interactively for options]' \
+        '(-y --yes)'{-y,--yes}'[Assume yes to all prompts]' \
+        '--settings-only[Apply settings without reinstalling dependencies]' \
+        '--styling-off[Disable theme styling (solid mode)]' \
+        '--styling-on[Restore theme styling]' \
+        '--doctor[Run system diagnostic checks]' \
+        '(-h --help)'{-h,--help}'[Show usage help]'
+}
+
+_aura_glass_uninstall() {
+    _arguments -s \
+        '--all[Remove all components, extensions, assets, and configurations]' \
+        '--full[Alias for --all]' \
+        '--extensions[Remove installed extensions]' \
+        '--assets[Remove themes, icons, and fonts]' \
+        '--gdm[Revert GDM login screen configuration]' \
+        '--gdm-monitors[Remove GDM monitors.xml sync]' \
+        '--interactive[Confirm each removal step interactively]' \
+        '(-y --yes)'{-y,--yes}'[Assume yes to all uninstall prompts]' \
+        '(-n --dry-run)'{-n,--dry-run}'[Simulate uninstall without deleting files]' \
+        '(-h --help)'{-h,--help}'[Show uninstall help]'
+}
+
+_aura_glass_ext() {
+    local -a subcmds
+    subcmds=(
+        'list:List installed and available extensions'
+        'install:Install an extension by UUID'
+        'remove:Remove an installed extension'
+        'enable:Enable an extension'
+        'disable:Disable an extension'
+        'recommended:Install recommended extension pack'
+        'full:Install full extension pack'
+    )
+
+    local -a uuids
+    uuids=(
+        'user-theme@gnome-shell-extensions.gcampax.github.com:User Themes'
+        'openbar@neuromorph:Open Bar top bar styling'
+        'blur-my-shell@aunetx:Blur My Shell'
+        'custom-osd@neuromorph:Custom OSD popups'
+        'just-perfection-desktop@just-perfection:Just Perfection desktop tweak'
+        'gnome-ui-tune@itstime.tech:GNOME UI Tune'
+        'space-bar@luchrioh:Space Bar workspace indicator'
+        'appindicatorsupport@rgcjonas.gmail.com:AppIndicator and KStatusNotifierItem support'
+        'clipboard-indicator@tudmotu.com:Clipboard Indicator'
+        'compiz-alike-magic-lamp-effect@hermes83.github.com:Compiz magic lamp window effect'
+        'Vitals@CoreCoding.com:Vitals hardware monitor'
+        'auto-accent-colour@Wartybix:Auto Accent Colour'
+        'ddterm@amezin.github.com:ddterm drop-down terminal'
+        'kiwimenu@kemma:Kiwi Menu application launcher'
+        'hotedge@jonathan.jdoda.ca:Hot Edge screen trigger'
+        'restartto@tiagoporsch.github.io:Restart To UEFI/OS'
+        'xwayland-indicator@swsnr.de:XWayland Indicator'
+        'add-to-steam@pupper.space:Add to Steam shortcut helper'
+    )
+
+    if (( CURRENT == 2 )); then
+        _describe -t commands 'aura-glass-ext subcommands' subcmds
+    elif (( CURRENT == 3 )); then
+        case "$words[2]" in
+            install|remove|enable|disable)
+                _describe -t uuids 'GNOME Shell Extensions' uuids
+                ;;
+        esac
+    fi
+}
+
+_aura_glass_doctor() {
+    _arguments -s \
+        '--json[Output diagnostic results in JSON format]' \
+        '(-q --quiet)'{-q,--quiet}'[Suppress non-essential output]' \
+        '(-h --help)'{-h,--help}'[Show help and diagnostics overview]'
+}
+
+_aura_glass_backup() {
+    local -a subcmds
+    subcmds=(
+        'create:Create a new timestamped configuration backup'
+        'export:Export configuration archive to specified tar.gz path'
+        'import:Import and apply configuration from a tar.gz archive'
+        'restore:Restore configuration from an existing backup'
+        'list:List all saved backups with creation dates and sizes'
+        'verify:Verify integrity and security of a backup archive'
+    )
+
+    if (( CURRENT == 2 )); then
+        _describe -t commands 'aura-glass-backup subcommands' subcmds
+    elif (( CURRENT >= 3 )); then
+        case "$words[2]" in
+            export|import|restore|verify)
+                _files -g '*.tar.gz *.tgz'
+                ;;
+        esac
+    fi
+}
+
+_aura_glass_mode() {
+    local -a subcmds
+    subcmds=(
+        'get:Display the currently active glass mode'
+        'set:Activate a specified glass mode (frosted, transparent, solid)'
+        'toggle:Cycle through glass modes (frosted -> transparent -> solid)'
+        'frosted:Directly switch to Frosted glass mode'
+        'transparent:Directly switch to Transparent glass mode'
+        'solid:Directly switch to Solid (opaque) mode'
+    )
+
+    _arguments -s \
+        '--notify[Display a desktop notification after changing mode]' \
+        '(-h --help)'{-h,--help}'[Show mode switcher help]' \
+        '*::subcommand:->subcmd'
+
+    if [[ -n "$state" ]]; then
+        if (( CURRENT == 2 )); then
+            _describe -t commands 'aura-glass-mode commands' subcmds
+        elif (( CURRENT == 3 && words[2] == "set" )); then
+            local -a modes
+            modes=('frosted:Frosted glass' 'transparent:Transparent glass' 'solid:Solid theme')
+            _describe -t modes 'glass modes' modes
+        fi
+    fi
+}
+
+_aura_glass_update_check() {
+    _arguments -s \
+        '--notify[Send desktop notification if update is available]' \
+        '(-h --help)'{-h,--help}'[Show update check help]'
+}
+
+# Dispatch based on invoked command name
+case "${words[1]:t}" in
+    install.sh|aura-glass-apply)
+        _aura_glass_install
+        ;;
+    uninstall.sh)
+        _aura_glass_uninstall
+        ;;
+    aura-glass-ext)
+        _aura_glass_ext
+        ;;
+    aura-glass-doctor)
+        _aura_glass_doctor
+        ;;
+    aura-glass-backup)
+        _aura_glass_backup
+        ;;
+    aura-glass-mode)
+        _aura_glass_mode
+        ;;
+    aura-glass-update-check)
+        _aura_glass_update_check
+        ;;
+    *)
+        _aura_glass_install
+        ;;
+esac

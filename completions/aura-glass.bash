@@ -118,8 +118,51 @@ _aura_glass_doctor() {
     fi
 }
 
+_aura_glass_backup() {
+    local cur prev subcmds
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    subcmds="create export import restore list verify -h --help"
+
+    case "$prev" in
+        export|import|restore|verify)
+            COMPREPLY=( $(compgen -f -X '!*.tar.gz' -- "$cur") $(compgen -f -X '!*.tgz' -- "$cur") )
+            return 0
+            ;;
+    esac
+
+    if [ "$COMP_CWORD" -eq 1 ]; then
+        COMPREPLY=( $(compgen -W "$subcmds" -- "$cur") )
+        return 0
+    fi
+}
+
+_aura_glass_mode() {
+    local cur prev subcmds modes
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    modes="frosted transparent solid"
+    subcmds="get set toggle frosted transparent solid --notify -h --help"
+
+    case "$prev" in
+        set)
+            COMPREPLY=( $(compgen -W "$modes" -- "$cur") )
+            return 0
+            ;;
+    esac
+
+    COMPREPLY=( $(compgen -W "$subcmds" -- "$cur") )
+}
+
 complete -F _aura_glass_install install.sh ./install.sh aura-glass-apply ./bin/aura-glass-apply bin/aura-glass-apply
 complete -F _aura_glass_uninstall uninstall.sh ./uninstall.sh
 complete -F _aura_glass_update_check aura-glass-update-check ./bin/aura-glass-update-check bin/aura-glass-update-check
 complete -F _aura_glass_ext aura-glass-ext ./bin/aura-glass-ext bin/aura-glass-ext
 complete -F _aura_glass_doctor aura-glass-doctor ./bin/aura-glass-doctor bin/aura-glass-doctor
+complete -F _aura_glass_backup aura-glass-backup ./bin/aura-glass-backup bin/aura-glass-backup
+complete -F _aura_glass_mode aura-glass-mode ./bin/aura-glass-mode bin/aura-glass-mode
+

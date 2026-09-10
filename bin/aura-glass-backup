@@ -1,0 +1,295 @@
+#!/usr/bin/env bash
+# aura-glass-backup — configuration profile backup, export, and restore utility.
+set -euo pipefail
+
+CONF_DIR="${AURA_GLASS_DIR:-${TAHOE_GLASS_DIR:-$HOME/.config/aura-glass}}"
+[ -d "$CONF_DIR" ] || [ ! -d "$HOME/.config/tahoe-glass" ] || CONF_DIR="$HOME/.config/tahoe-glass"
+BACKUP_DIR="$CONF_DIR/backups"
+
+# Guard: Refuse running as root to prevent permission corruption
+if [ "$(id -u)" -eq 0 ]; then
+    printf 'error: aura-glass-backup manages user themes and must not be run as root.\n' >&2
+    exit 1
+fi
+
+usage() {
+    cat <<'EOF'
+aura-glass-backup — profile backup, export, and restore utility
+
+USAGE:
+    aura-glass-backup create [tag]
+    aura-glass-backup export <output_file.tar.gz>
+    aura-glass-backup import <archive.tar.gz>
+    aura-glass-backup restore <archive.tar.gz | tag>
+    aura-glass-backup list
+    aura-glass-backup verify <archive.tar.gz>
+    aura-glass-backup -h | --help
+
+COMMANDS:
+    create [tag]       Create a timestamped backup in ~/.config/aura-glass/backups/
+    export <file>      Export configuration to a specific tar.gz archive
+    import <file>      Import configuration from archive and re-apply styling
+    restore <file|tag> Restore from a backup file or named tag
+    list               List available backups in the backup directory
+    verify <file>      Validate archive integrity and check for path traversal
+    -h, --help         Show this help message
+EOF
+}
+
+die() { printf 'error: %s\n' "$*" >&2; exit 1; }
+ok()  { printf '✓ %s\n' "$*"; }
+info() { printf '  %s\n' "$*"; }
+
+read_val() {
+    local f="$CONF_DIR/$1"
+    if [ -r "$f" ]; then
+        head -n 1 "$f" 2>/dev/null || echo ""
+    else
+        echo ""
+    fi
+}
+
+# Validate archive safety and gzip integrity
+verify_archive() {
+    local archive="$1"
+    [ -f "$archive" ] || die "archive not found: $archive"
+
+    # Check gzip format
+    if ! gzip -t "$archive" 2>/dev/null; then
+        die "corrupt archive or not a valid gzip file: $archive"
+    fi
+
+    # Inspect contents for path traversal (leading slash or ../)
+    local bad_paths
+    bad_paths="$(tar -tzf "$archive" 2>/dev/null | grep -E '^/|\.\./' || true)"
+    if [ -n "$bad_paths" ]; then
+        die "security violation: archive contains forbidden absolute or traversal paths:\n$bad_paths"
+    fi
+    return 0
+}
+
+collect_and_pack() {
+    local out_tar="$1"
+    mkdir -p "$BACKUP_DIR"
+    chmod 700 "$CONF_DIR" "$BACKUP_DIR" 2>/dev/null || true
+
+    local stage_dir
+    stage_dir="$(mktemp -d "${TMPDIR:-/tmp}/aura-glass-backup.XXXXXX")"
+    trap 'rm -rf "$stage_dir"' EXIT
+
+    # 1. Copy config files (excluding backups and cache)
+    if [ -d "$CONF_DIR" ]; then
+        for item in "$CONF_DIR"/*; do
+            [ -e "$item" ] || continue
+            local bname="${item##*/}"
+            case "$bname" in
+                backups|cache) continue ;;
+                *) cp -a "$item" "$stage_dir/" ;;
+            esac
+        done
+    fi
+
+    # 2. Dump dconf configuration if available
+    if command -v dconf >/dev/null 2>&1; then
+        dconf dump /org/gnome/shell/extensions/blur-my-shell/ > "$stage_dir/dconf-blur-my-shell.dump" 2>/dev/null || true
+        dconf dump /org/gnome/shell/extensions/user-theme/ > "$stage_dir/dconf-user-theme.dump" 2>/dev/null || true
+        dconf dump /org/gnome/shell/extensions/openbar/ > "$stage_dir/dconf-openbar.dump" 2>/dev/null || true
+    fi
+
+    # 3. Create metadata JSON
+    local accent mode radius font icons
+    accent="$(read_val accent)"
+    mode="$(read_val glass-mode)"
+    radius="$(read_val radius-preset)"
+    font="$(read_val font)"
+    icons="$(read_val icons)"
+    local ts
+    ts="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+
+    cat > "$stage_dir/backup-metadata.json" <<EOF
+{
+  "timestamp": "$ts",
+  "hostname": "${HOSTNAME:-$(uname -n)}",
+  "theme": "Aura-Glass",
+  "accent": "${accent:-blue}",
+  "glass_mode": "${mode:-frosted}",
+  "radius_preset": "${radius:-default}",
+  "font": "${font:-system}",
+  "icons": "${icons:-original}"
+}
+EOF
+
+    # 4. Pack into compressed tarball
+    tar -czf "$out_tar" -C "$stage_dir" .
+    chmod 600 "$out_tar"
+    trap - EXIT
+    rm -rf "$stage_dir"
+}
+
+cmd_create() {
+    local tag="${1:-}"
+    local stamp
+    stamp="$(date +"%Y%m%d_%H%M%S")"
+    local fname
+    if [ -n "$tag" ]; then
+        # sanitize tag
+        tag="$(printf '%s' "$tag" | tr -c 'a-zA-Z0-9_-' '_')"
+        fname="aura-glass-backup-${stamp}-${tag}.tar.gz"
+    else
+        fname="aura-glass-backup-${stamp}.tar.gz"
+    fi
+
+    local dest="$BACKUP_DIR/$fname"
+    collect_and_pack "$dest"
+    ok "backup created successfully: $dest"
+}
+
+cmd_export() {
+    local out="$1"
+    case "$out" in
+        *.tar.gz|*.tgz) ;;
+        *) out="${out}.tar.gz" ;;
+    esac
+
+    local dir
+    dir="$(dirname "$out")"
+    mkdir -p "$dir"
+    collect_and_pack "$out"
+    ok "exported profile to: $out"
+}
+
+cmd_list() {
+    if [ ! -d "$BACKUP_DIR" ] || [ -z "$(ls -A "$BACKUP_DIR" 2>/dev/null)" ]; then
+        info "no backups found in $BACKUP_DIR"
+        return 0
+    fi
+
+    printf '%-40s %-10s %-20s\n' "BACKUP FILE" "SIZE" "DATE"
+    printf '%-40s %-10s %-20s\n' "----------------------------------------" "----------" "--------------------"
+    for b in "$BACKUP_DIR"/*.tar.gz "$BACKUP_DIR"/*.tgz; do
+        [ -f "$b" ] || continue
+        local bname="${b##*/}"
+        local sz
+        sz="$(du -h "$b" 2>/dev/null | cut -f1)"
+        local mtime
+        mtime="$(date -r "$b" "+%Y-%m-%d %H:%M:%S" 2>/dev/null || stat -c "%y" "$b" 2>/dev/null | cut -d'.' -f1 || echo "unknown")"
+        printf '%-40s %-10s %-20s\n' "$bname" "$sz" "$mtime"
+    done
+}
+
+cmd_verify() {
+    local target="$1"
+    verify_archive "$target"
+    ok "archive integrity and security verified: $target"
+    if tar -tzf "$target" | grep -q "backup-metadata.json"; then
+        info "Metadata summary:"
+        tar -xzOf "$target" ./backup-metadata.json 2>/dev/null || tar -xzOf "$target" backup-metadata.json 2>/dev/null || true
+    fi
+}
+
+cmd_restore() {
+    local target="$1"
+    local archive=""
+
+    if [ -f "$target" ]; then
+        archive="$target"
+    elif [ -f "$BACKUP_DIR/$target" ]; then
+        archive="$BACKUP_DIR/$target"
+    elif [ -f "$BACKUP_DIR/$target.tar.gz" ]; then
+        archive="$BACKUP_DIR/$target.tar.gz"
+    else
+        # Match tag prefix or suffix
+        local match
+        match="$(ls -1 "$BACKUP_DIR"/*"$target"*.tar.gz 2>/dev/null | head -n 1 || true)"
+        if [ -n "$match" ] && [ -f "$match" ]; then
+            archive="$match"
+        fi
+    fi
+
+    [ -n "$archive" ] && [ -f "$archive" ] || die "backup archive not found: $target"
+
+    verify_archive "$archive"
+
+    # Pre-restore safety snapshot if config exists
+    if [ -d "$CONF_DIR" ] && [ -n "$(ls -A "$CONF_DIR" 2>/dev/null)" ]; then
+        local pre_snap="$BACKUP_DIR/pre-restore-$(date +"%Y%m%d_%H%M%S").tar.gz"
+        info "creating safety snapshot of current configuration..."
+        collect_and_pack "$pre_snap"
+    fi
+
+    mkdir -p "$CONF_DIR"
+    chmod 700 "$CONF_DIR"
+
+    # Extract
+    tar -xzf "$archive" -C "$CONF_DIR"
+    chmod 700 "$CONF_DIR"
+    find "$CONF_DIR" -maxdepth 1 -type f -exec chmod 600 {} + 2>/dev/null || true
+
+    # Restore dconf dumps if present
+    if command -v dconf >/dev/null 2>&1; then
+        if [ -f "$CONF_DIR/dconf-blur-my-shell.dump" ]; then
+            dconf load /org/gnome/shell/extensions/blur-my-shell/ < "$CONF_DIR/dconf-blur-my-shell.dump" 2>/dev/null || true
+            rm -f "$CONF_DIR/dconf-blur-my-shell.dump"
+        fi
+        if [ -f "$CONF_DIR/dconf-user-theme.dump" ]; then
+            dconf load /org/gnome/shell/extensions/user-theme/ < "$CONF_DIR/dconf-user-theme.dump" 2>/dev/null || true
+            rm -f "$CONF_DIR/dconf-user-theme.dump"
+        fi
+        if [ -f "$CONF_DIR/dconf-openbar.dump" ]; then
+            dconf load /org/gnome/shell/extensions/openbar/ < "$CONF_DIR/dconf-openbar.dump" 2>/dev/null || true
+            rm -f "$CONF_DIR/dconf-openbar.dump"
+        fi
+    fi
+
+    # Trigger apply
+    local apply_bin=""
+    if command -v aura-glass-apply >/dev/null 2>&1; then
+        apply_bin="aura-glass-apply"
+    elif [ -x "$HOME/.local/bin/aura-glass-apply" ]; then
+        apply_bin="$HOME/.local/bin/aura-glass-apply"
+    else
+        local script_dir
+        script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        if [ -x "$script_dir/aura-glass-apply" ]; then
+            apply_bin="$script_dir/aura-glass-apply"
+        fi
+    fi
+
+    if [ -n "$apply_bin" ]; then
+        info "re-applying restored theme settings..."
+        "$apply_bin" || true
+    fi
+
+    ok "configuration successfully restored from: $archive"
+}
+
+# Main command dispatch
+[ $# -ge 1 ] || { usage; exit 1; }
+
+case "$1" in
+    create)
+        cmd_create "${2:-}"
+        ;;
+    export)
+        [ $# -ge 2 ] || die "export requires an output filename (e.g. aura-glass-backup export my-theme.tar.gz)"
+        cmd_export "$2"
+        ;;
+    list)
+        cmd_list
+        ;;
+    verify)
+        [ $# -ge 2 ] || die "verify requires an archive file path"
+        cmd_verify "$2"
+        ;;
+    import|restore)
+        [ $# -ge 2 ] || die "restore requires an archive file path or tag"
+        cmd_restore "$2"
+        ;;
+    -h|--help|help)
+        usage
+        exit 0
+        ;;
+    *)
+        die "unknown command '$1'. Run 'aura-glass-backup --help' for usage."
+        ;;
+esac

@@ -221,9 +221,43 @@ fi
 
 if [ -d "$CONF_DIR" ]; then
     record "Theme" "Config Directory" "OK" "$CONF_DIR present"
+    local_perm="$(stat -c "%a" "$CONF_DIR" 2>/dev/null || stat -f "%Lp" "$CONF_DIR" 2>/dev/null || echo "")"
+    if [ "$local_perm" = "700" ]; then
+        record "Security" "Config Permissions" "OK" "$CONF_DIR permissions secure (700)"
+    else
+        record "Security" "Config Permissions" "WARN" "$CONF_DIR permissions are $local_perm (recommended: 700)" "Run chmod 700 $CONF_DIR"
+    fi
 else
     record "Theme" "Config Directory" "WARN" "$CONF_DIR not yet created" "Run ./install.sh to create configuration."
 fi
+
+# 8. Shell Completions
+bash_comp="$HOME/.local/share/bash-completion/completions/aura-glass"
+zsh_comp="$HOME/.local/share/zsh/site-functions/_aura-glass"
+fish_comp="$HOME/.config/fish/completions/aura-glass.fish"
+
+if [ -f "$bash_comp" ]; then
+    record "Integration" "Bash Completion" "OK" "installed ($bash_comp)"
+else
+    record "Integration" "Bash Completion" "INFO" "not installed" "Run ./install.sh to deploy shell completions."
+fi
+
+if have zsh; then
+    if [ -f "$zsh_comp" ]; then
+        record "Integration" "Zsh Completion" "OK" "installed ($zsh_comp)"
+    else
+        record "Integration" "Zsh Completion" "INFO" "not installed" "Run ./install.sh to deploy shell completions."
+    fi
+fi
+
+if have fish; then
+    if [ -f "$fish_comp" ]; then
+        record "Integration" "Fish Completion" "OK" "installed ($fish_comp)"
+    else
+        record "Integration" "Fish Completion" "INFO" "not installed" "Run ./install.sh to deploy shell completions."
+    fi
+fi
+
 
 # Count statistics
 ok_cnt=0
