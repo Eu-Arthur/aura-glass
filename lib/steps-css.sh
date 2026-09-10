@@ -42,8 +42,17 @@ def primary_and_scale():
 conn, scale = primary_and_scale()
 
 def ppi_of(path):
-    w, h = (int(x) for x in open(path + "modes").read().split()[0].split("x"))
-    edid = open(path + "edid", "rb").read()
+    modes_file = path + "modes"
+    edid_file = path + "edid"
+    if not (os.path.isfile(modes_file) and os.path.isfile(edid_file)):
+        return None
+    modes = open(modes_file).read().split()
+    if not modes or "x" not in modes[0]:
+        return None
+    w, h = (int(x) for x in modes[0].split("x"))
+    edid = open(edid_file, "rb").read()
+    if len(edid) < 23:
+        return None
     wcm, hcm = edid[21], edid[22]        # EDID basic params: image size in cm
     if not (wcm and hcm):
         return None

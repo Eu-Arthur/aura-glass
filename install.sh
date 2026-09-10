@@ -47,6 +47,15 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tokens/tokens.sh
 . "$REPO_ROOT/tokens/tokens.sh"
 
+on_install_exit() {
+    local rc=$?
+    if [ "$rc" -ne 0 ]; then
+        printf '\n%s! Installation interrupted or failed (exit code %s).%s\n' "${C_YEL:-}" "$rc" "${C_OFF:-}" >&2
+        printf '  To restore your desktop to its original state, run: %s./uninstall.sh%s\n\n' "${C_BLD:-}" "${C_OFF:-}" >&2
+    fi
+}
+trap on_install_exit EXIT
+
 ACCENT=""          # empty = remembered choice, then $ACCENT_DEFAULT
 ACCENT_DEFAULT="purple"
 WANT_EXTRAS=1

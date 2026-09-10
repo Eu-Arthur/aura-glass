@@ -273,6 +273,11 @@ preflight() {
         *)                  warn "$DISTRO_PRETTY — untested family '$DISTRO_FAMILY', continuing anyway" ;;
     esac
 
+    case ":$PATH:" in
+        *":$HOME/.local/bin:"*) ;;
+        *) warn "~/.local/bin is not in your PATH — add it to your shell rc so aura-glass commands are found directly" ;;
+    esac
+
     run mkdir -p "$CONF_DIR" "$BACKUP_DIR" "$SRC_CACHE" "$EXT_DIR"
 
     # Before anything is applied, and only ever the first time: this is what

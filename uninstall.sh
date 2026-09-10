@@ -358,7 +358,7 @@ run rm -f "$HOME/.local/share/icons/hicolor/scalable/apps/io.github.DevWebeloper
 # The open-once autostart entry, if an install armed it and no login has spent
 # it yet. Left behind it would open a window that is no longer installed, on
 # every login, forever — the entry only deletes itself when it manages to run.
-run rm -f "$HOME/.config/autostart/aura-glass-open-once.desktop"
+run rm -f "$HOME/.config/autostart/aura-glass-open-once.desktop" "$HOME/.config/autostart/tahoe-glass-open-once.desktop"
 # Stamps describing artifacts that have just been removed, rather than choices
 # the user made — so they go now instead of waiting on the $CONF_DIR prompt.
 #
