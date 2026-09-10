@@ -84,6 +84,9 @@ StartupNotify=true
 StartupWMClass=$GUI_APP_ID
 EOF
         chmod 644 "$GUI_DESKTOP"
+        if [ "${DRY_RUN:-0}" != 1 ] && command -v update-desktop-database >/dev/null 2>&1; then
+            update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
+        fi
     fi
 
     ok "settings window -> aura-glass-settings (and the Activities overview)"

@@ -30,7 +30,7 @@ sync_wallpaper() {
     tmp="$(mktemp /tmp/aura-gdm-sync.XXXXXX.png)"
     if ! python3 - "$wall" "$tmp" <<'PY'
 import os, sys, urllib.parse, subprocess
-from PIL import Image, ImageFilter, ImageEnhance
+from PIL import Image, ImageFilter, ImageEnhance, ImageOps
 
 src = sys.argv[1]
 dst = sys.argv[2]
@@ -51,7 +51,7 @@ if src.lower().endswith(('.svg', '.svgz')):
 
 try:
     im = Image.open(src).convert('RGB')
-    im.thumbnail((2560, 1440), Image.Resampling.LANCZOS)
+    im = ImageOps.fit(im, (2560, 1440), method=Image.Resampling.LANCZOS)
     im = im.filter(ImageFilter.GaussianBlur(radius=30))
     enhancer = ImageEnhance.Brightness(im)
     im = enhancer.enhance(0.55)

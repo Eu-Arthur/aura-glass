@@ -13,15 +13,15 @@ _aura_glass_install() {
 
     case "$prev" in
         --accent)
-            COMPREPLY=( $(compgen -W "purple blue teal green yellow orange red pink graphite" -- "$cur") )
+            COMPREPLY=( $(compgen -W "blue teal green yellow orange red pink purple slate" -- "$cur") )
             return 0
             ;;
         --glass-mode|--blur-mode)
-            COMPREPLY=( $(compgen -W "frosted fluid solid" -- "$cur") )
+            COMPREPLY=( $(compgen -W "frosted transparent solid" -- "$cur") )
             return 0
             ;;
         --radius-preset)
-            COMPREPLY=( $(compgen -W "none sharp small default medium round full" -- "$cur") )
+            COMPREPLY=( $(compgen -W "flat sharp adwaita soft medium default rounded custom" -- "$cur") )
             return 0
             ;;
         --font)
@@ -29,7 +29,7 @@ _aura_glass_install() {
             return 0
             ;;
         --icons)
-            COMPREPLY=( $(compgen -W "colloid reversal mactahoe keep original" -- "$cur") )
+            COMPREPLY=( $(compgen -W "colloid reversal mactahoe hatter keep original" -- "$cur") )
             return 0
             ;;
         --cursors)

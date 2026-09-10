@@ -24,10 +24,10 @@ detect_distro() {
     fi
 
     case " $id $id_like " in
-        *" arch "*|*" cachyos "*|*" archarm "*) DISTRO_FAMILY="arch" ;;
-        *" fedora "*|*" rhel "*)                DISTRO_FAMILY="fedora" ;;
-        *" debian "*|*" ubuntu "*)              DISTRO_FAMILY="debian" ;;
-        *)                                      DISTRO_FAMILY="unknown" ;;
+        *" arch "*|*" archlinux "*|*" cachyos "*|*" manjaro "*|*" endeavouros "*|*" garuda "*|*" archarm "*) DISTRO_FAMILY="arch" ;;
+        *" fedora "*|*" rhel "*|*" centos "*|*" rocky "*|*" almalinux "*|*" nobara "*)               DISTRO_FAMILY="fedora" ;;
+        *" debian "*|*" ubuntu "*|*" pop "*|*" linuxmint "*|*" zorin "*|*" elementary "*)              DISTRO_FAMILY="debian" ;;
+        *)                                                                                             DISTRO_FAMILY="unknown" ;;
     esac
 }
 
