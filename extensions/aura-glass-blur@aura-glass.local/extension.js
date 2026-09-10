@@ -69,12 +69,18 @@ const DBUS_IFACE = `
 // allow/block list in the settings window would disagree about what a
 // pattern covers. lib/steps-dconf.sh (app_blur_covers_self) and
 // gui/aura_glass_settings.py (pattern_matches) are the other two mirrors.
+const _regexCache = new Map();
 function wildcardToRegex(pattern) {
-    const escaped = pattern
-        .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-        .replace(/\*/g, '.*')
-        .replace(/\?/g, '.');
-    return new RegExp(`^${escaped}$`, 'i');
+    let re = _regexCache.get(pattern);
+    if (!re) {
+        const escaped = pattern
+            .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+            .replace(/\*/g, '.*')
+            .replace(/\?/g, '.');
+        re = new RegExp(`^${escaped}$`, 'i');
+        _regexCache.set(pattern, re);
+    }
+    return re;
 }
 
 function matchesAny(patterns, wmClass) {
@@ -187,6 +193,7 @@ export default class AuraGlassBlurExtension extends Extension {
             this._dbusImpl.unexport();
             this._dbusImpl = null;
         }
+        _regexCache.clear();
     }
 
     // Blur My Shell ships its own compiled schema rather than a system one,

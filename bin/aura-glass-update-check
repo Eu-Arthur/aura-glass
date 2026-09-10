@@ -29,6 +29,10 @@
 # up to date.
 set -euo pipefail
 
+# Fail quickly if offline or slow network rather than hanging
+export GIT_HTTP_CONNECT_TIMEOUT=10
+export GIT_CONNECT_TIMEOUT=10
+
 CONF_DIR="${AURA_GLASS_CONF:-$HOME/.config/aura-glass}"
 STATE="$CONF_DIR/update-available"
 NOTIFY=0

@@ -322,7 +322,7 @@ if [ "$REMOVE_ASSETS" = 1 ]; then
         run rm -rf "$HOME/.local/share/fonts/aura-glass"
         run rm -f "$HOME/.config/fontconfig/conf.d/60-aura-glass-misans.conf"
         if [ "${DRY_RUN:-0}" != 1 ] && have fc-cache; then
-            fc-cache -f >/dev/null 2>&1 || true
+            fc-cache -r "$HOME/.local/share/fonts" 2>/dev/null || fc-cache "$HOME/.local/share/fonts" 2>/dev/null || true
         fi
         ok "removed the fonts aura-glass installed"
     fi
@@ -407,6 +407,7 @@ run rm -f "$CONF_DIR/bms-ref" "$CONF_DIR/bms-source" \
           "$CONF_DIR/blur-strength" \
           "$CONF_DIR/gdm-installed" \
           "$CONF_DIR/gdm-monitors-synced" \
+          "$CONF_DIR/gdm-wallpaper-memo" \
           "$CONF_DIR/radius-preset" \
           "$CONF_DIR/repo-path" \
           "$CONF_DIR/update-check" \

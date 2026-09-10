@@ -29,6 +29,14 @@ generate_gdm_wallpaper() {
     local src="$1" dst="$2"
     [ -f "$src" ] || return 1
 
+    local memo_file="$CONF_DIR/gdm-wallpaper-memo"
+    local current_memo="$src:$(stat -c %Y "$src" 2>/dev/null || true)"
+    if [ -f "$dst" ] && [ -s "$dst" ] && [ -f "$memo_file" ]; then
+        if [ "$(cat "$memo_file" 2>/dev/null)" = "$current_memo" ]; then
+            return 0
+        fi
+    fi
+
     python3 - "$src" "$dst" <<'PY' || return 1
 import os, sys, urllib.parse, subprocess
 from PIL import Image, ImageFilter, ImageEnhance, ImageOps
@@ -69,6 +77,10 @@ except Exception:
     except Exception:
         sys.exit(1)
 PY
+
+    mkdir -p "$CONF_DIR"
+    printf '%s\n' "$current_memo" > "$memo_file" 2>/dev/null || true
+    return 0
 }
 
 sync_gdm_monitors() {

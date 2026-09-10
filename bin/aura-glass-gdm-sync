@@ -21,10 +21,21 @@ get_wallpaper() {
     fi
 }
 
+CONF_DIR="${AURA_GLASS_CONF:-$HOME/.config/aura-glass}"
+[ -d "$CONF_DIR" ] || [ ! -d "$HOME/.config/tahoe-glass" ] || CONF_DIR="$HOME/.config/tahoe-glass"
+WALL_MEMO="$CONF_DIR/gdm-wallpaper-memo"
+
 sync_wallpaper() {
     [ -w "$TARGET_WALL" ] || return 0
     local wall; wall="$(get_wallpaper)"
     [ -n "$wall" ] && [ -f "$wall" ] || return 0
+
+    local current_memo="$wall:$(stat -c %Y "$wall" 2>/dev/null || true)"
+    if [ -f "$TARGET_WALL" ] && [ -s "$TARGET_WALL" ] && [ -f "$WALL_MEMO" ]; then
+        if [ "$(cat "$WALL_MEMO" 2>/dev/null)" = "$current_memo" ]; then
+            return 0
+        fi
+    fi
 
     local tmp
     tmp="$(mktemp /tmp/aura-gdm-sync.XXXXXX.png)"
@@ -74,7 +85,10 @@ PY
     fi
 
     if [ -f "$tmp" ]; then
-        cp -f "$tmp" "$TARGET_WALL" 2>/dev/null || cat "$tmp" > "$TARGET_WALL" 2>/dev/null || true
+        if cp -f "$tmp" "$TARGET_WALL" 2>/dev/null || cat "$tmp" > "$TARGET_WALL" 2>/dev/null; then
+            mkdir -p "$CONF_DIR"
+            printf '%s\n' "$current_memo" > "$WALL_MEMO" 2>/dev/null || true
+        fi
         rm -f "$tmp"
     fi
 }
