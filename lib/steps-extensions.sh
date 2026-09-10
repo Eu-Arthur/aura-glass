@@ -51,7 +51,7 @@ install_ext_ego() {
         return 0
     fi
 
-    info_json="$(curl -sf "https://extensions.gnome.org/extension-info/?uuid=$uuid&shell_version=$GNOME_MAJOR")" \
+    info_json="$(curl --connect-timeout 15 --retry 2 -sf "https://extensions.gnome.org/extension-info/?uuid=$uuid&shell_version=$GNOME_MAJOR")" \
         || { warn "$uuid: not listed for GNOME $GNOME_MAJOR — skipped"; return 1; }
     url="$(printf '%s' "$info_json" | python3 -c 'import sys,json;print(json.load(sys.stdin)["download_url"])')" \
         || { warn "$uuid: no download url — skipped"; return 1; }
@@ -62,8 +62,10 @@ install_ext_ego() {
     # turns the stale cleanup into a fatal "unbound variable" mid-install.
     tmp="$(mktemp -d)"
     local rc=0
-    if ! curl -sLo "$tmp/e.zip" "https://extensions.gnome.org$url"; then
+    if ! curl --connect-timeout 15 --retry 2 -sLo "$tmp/e.zip" "https://extensions.gnome.org$url"; then
         warn "$uuid: download failed — skipped"; rc=1
+    elif ! unzip -tq "$tmp/e.zip" >/dev/null 2>&1; then
+        warn "$uuid: downloaded archive is corrupt or incomplete — skipped"; rc=1
     elif ! ext_supports_shell "$tmp/e.zip" "$GNOME_MAJOR"; then
         ver="$(unzip -p "$tmp/e.zip" metadata.json | python3 -c 'import sys,json;print(json.load(sys.stdin).get("shell-version"))')"
         warn "$uuid: published build supports $ver, not GNOME $GNOME_MAJOR — skipped"; rc=1

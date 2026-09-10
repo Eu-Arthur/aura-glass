@@ -8,6 +8,7 @@ Type=simple
 ExecStart=%h/.local/bin/aura-glass-gdm-sync
 Restart=on-failure
 RestartSec=5
+NoNewPrivileges=true
 
 [Install]
 WantedBy=graphical-session.target

@@ -104,6 +104,9 @@ sync_monitors() {
 sync_wallpaper || true
 sync_monitors || true
 
+# Terminate all background monitoring jobs cleanly on exit
+trap 'kill $(jobs -p) 2>/dev/null || true' EXIT INT TERM
+
 # Monitor background changes and display changes in parallel
 (
     gsettings monitor org.gnome.desktop.background 2>/dev/null | while read -r _; do

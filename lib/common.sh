@@ -208,7 +208,7 @@ fetch_tarball_pinned() {
         return 0
     fi
     local tmp; tmp="$(mktemp -d)"
-    curl -fsSL -o "$tmp/archive" "$url" \
+    curl --connect-timeout 15 --retry 2 -fsSL -o "$tmp/archive" "$url" \
         || { rm -rf "$tmp"; die "could not download $url"; }
     local got; got="$(sha256sum "$tmp/archive" | cut -d' ' -f1)"
     if [ "$got" != "$sha" ]; then
@@ -242,7 +242,7 @@ fetch_zip_pinned() {
         return 0
     fi
     local tmp; tmp="$(mktemp -d)"
-    curl -fsSL -o "$tmp/archive.zip" "$url" \
+    curl --connect-timeout 15 --retry 2 -fsSL -o "$tmp/archive.zip" "$url" \
         || { rm -rf "$tmp"; die "could not download $url"; }
     local got; got="$(sha256sum "$tmp/archive.zip" | cut -d' ' -f1)"
     if [ "$got" != "$sha" ]; then

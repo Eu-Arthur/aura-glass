@@ -269,8 +269,8 @@ preflight() {
 
     detect_distro
     case "$DISTRO_FAMILY" in
-        arch)    ok "$DISTRO_PRETTY (arch family)" ;;
-        *)       warn "$DISTRO_PRETTY — untested family '$DISTRO_FAMILY', continuing anyway" ;;
+        arch|fedora|debian) ok "$DISTRO_PRETTY ($DISTRO_FAMILY family)" ;;
+        *)                  warn "$DISTRO_PRETTY — untested family '$DISTRO_FAMILY', continuing anyway" ;;
     esac
 
     run mkdir -p "$CONF_DIR" "$BACKUP_DIR" "$SRC_CACHE" "$EXT_DIR"

@@ -19,3 +19,5 @@ ExecStart=%h/.local/bin/aura-glass-update-check --notify
 SuccessExitStatus=10
 # A hung DNS lookup should not leave this sitting around until the next timer.
 TimeoutStartSec=60
+NoNewPrivileges=true
+ProtectSystem=full

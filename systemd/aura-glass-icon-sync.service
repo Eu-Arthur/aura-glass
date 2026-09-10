@@ -13,6 +13,7 @@ Type=simple
 ExecStart=%h/.local/bin/aura-glass-icon-sync
 Restart=on-failure
 RestartSec=5
+NoNewPrivileges=true
 
 [Install]
 WantedBy=graphical-session.target
