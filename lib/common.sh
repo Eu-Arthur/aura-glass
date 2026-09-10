@@ -217,7 +217,7 @@ fetch_tarball_pinned() {
     fi
     rm -rf "$dest"
     mkdir -p "$dest"
-    tar -xf "$tmp/archive" -C "$dest" \
+    tar --no-same-owner -xf "$tmp/archive" -C "$dest" \
         || { rm -rf "$tmp"; die "could not unpack $url"; }
     rm -rf "$tmp"
 }

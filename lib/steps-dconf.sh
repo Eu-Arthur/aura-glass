@@ -14,8 +14,14 @@ load_dconf() {
     step "Loading the dconf preset"
 
     if [ "${DRY_RUN:-0}" = 1 ]; then
+        info "dry-run: back up existing extension dconf settings to $BACKUP_DIR/extensions-pre-aura.dconf"
         info "dry-run: dconf load /org/gnome/shell/extensions/ < dconf/core.ini"
     else
+        # Back up existing extension dconf settings before applying core.ini
+        if command -v dconf >/dev/null 2>&1 && [ ! -f "$BACKUP_DIR/extensions-pre-aura.dconf" ]; then
+            mkdir -p "$BACKUP_DIR"
+            dconf dump /org/gnome/shell/extensions/ > "$BACKUP_DIR/extensions-pre-aura.dconf" 2>/dev/null || true
+        fi
         dconf load /org/gnome/shell/extensions/ < "$REPO_ROOT/dconf/core.ini" \
             || die "dconf load failed"
     fi

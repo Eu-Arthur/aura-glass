@@ -221,20 +221,26 @@ run gsettings reset org.gnome.desktop.wm.preferences titlebar-font
 ok "back to the GNOME defaults (window buttons left intact)"
 
 step "Resetting extension settings to GNOME defaults"
-# Core extensions (dconf/core.ini)
-run dconf reset -f /org/gnome/shell/extensions/openbar/
-run dconf reset -f /org/gnome/shell/extensions/blur-my-shell/
-run dconf reset -f /org/gnome/shell/extensions/custom-osd/
-run dconf reset -f /org/gnome/shell/extensions/user-theme/
-# Optional extensions (dconf/extras.ini)
-run dconf reset -f /org/gnome/shell/extensions/just-perfection/
-run dconf reset -f /org/gnome/shell/extensions/gnome-ui-tune/
-run dconf reset -f /org/gnome/shell/extensions/space-bar/
-run dconf reset -f /org/gnome/shell/extensions/vitals/
-run dconf reset -f /org/gnome/shell/extensions/clipboard-indicator/
-run dconf reset -f /org/gnome/shell/extensions/hotedge/
-run dconf reset -f /org/gnome/shell/extensions/appindicator/
-ok "all extension configs reset to their defaults"
+if [ -f "$BACKUP_DIR/extensions-pre-aura.dconf" ] && [ -s "$BACKUP_DIR/extensions-pre-aura.dconf" ]; then
+    info "restoring previous extension dconf configuration from backup"
+    run dconf load /org/gnome/shell/extensions/ < "$BACKUP_DIR/extensions-pre-aura.dconf" 2>/dev/null || true
+    ok "previous extension configuration restored from backup"
+else
+    # Core extensions (dconf/core.ini)
+    run dconf reset -f /org/gnome/shell/extensions/openbar/
+    run dconf reset -f /org/gnome/shell/extensions/blur-my-shell/
+    run dconf reset -f /org/gnome/shell/extensions/custom-osd/
+    run dconf reset -f /org/gnome/shell/extensions/user-theme/
+    # Optional extensions (dconf/extras.ini)
+    run dconf reset -f /org/gnome/shell/extensions/just-perfection/
+    run dconf reset -f /org/gnome/shell/extensions/gnome-ui-tune/
+    run dconf reset -f /org/gnome/shell/extensions/space-bar/
+    run dconf reset -f /org/gnome/shell/extensions/vitals/
+    run dconf reset -f /org/gnome/shell/extensions/clipboard-indicator/
+    run dconf reset -f /org/gnome/shell/extensions/hotedge/
+    run dconf reset -f /org/gnome/shell/extensions/appindicator/
+    ok "all extension configs reset to their defaults"
+fi
 
 # ------------------------------------------------------------------- units --
 

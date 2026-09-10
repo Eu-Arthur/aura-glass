@@ -17,5 +17,6 @@
 set -euo pipefail
 
 rm -f "$HOME/.config/autostart/aura-glass-open-once.desktop"
-
-exec "$HOME/.local/bin/aura-glass-settings"
+if [ -x "$HOME/.local/bin/aura-glass-settings" ]; then
+    exec "$HOME/.local/bin/aura-glass-settings"
+fi
