@@ -15,7 +15,11 @@ get_wallpaper() {
         uri="${uri//\'/}"
     fi
     if [[ "$uri" =~ ^file://(.*) ]]; then
-        python3 -c "import urllib.parse, sys; print(urllib.parse.unquote(sys.argv[1][7:]))" "$uri" 2>/dev/null || echo "${uri#file://}"
+        if [[ "$uri" != *%* ]]; then
+            echo "${uri#file://}"
+        else
+            python3 -c "import urllib.parse, sys; print(urllib.parse.unquote(sys.argv[1][7:]))" "$uri" 2>/dev/null || echo "${uri#file://}"
+        fi
     else
         echo "$uri"
     fi
@@ -32,7 +36,9 @@ sync_wallpaper() {
 
     local current_memo="$wall:$(stat -c %Y "$wall" 2>/dev/null || true)"
     if [ -f "$TARGET_WALL" ] && [ -s "$TARGET_WALL" ] && [ -f "$WALL_MEMO" ]; then
-        if [ "$(cat "$WALL_MEMO" 2>/dev/null)" = "$current_memo" ]; then
+        local saved_memo=""
+        IFS= read -r saved_memo < "$WALL_MEMO" 2>/dev/null || true
+        if [ "$saved_memo" = "$current_memo" ]; then
             return 0
         fi
     fi

@@ -21,7 +21,17 @@ TUNED_PPI=109
 
 # Logical PPI of the primary output, or nothing if it cannot be measured.
 measure_logical_ppi() {
-    python3 - <<'PY' 2>/dev/null
+    local cache="/tmp/.aura-glass-ppi-$(id -u)"
+    if [ -r "$cache" ]; then
+        local val
+        IFS= read -r val < "$cache" 2>/dev/null || true
+        case "$val" in
+            ''|*[!0-9]*) ;;
+            *) printf '%s\n' "$val"; return 0 ;;
+        esac
+    fi
+    local res
+    res="$(python3 - <<'PY' 2>/dev/null
 import glob, math, os, re, subprocess
 
 def primary_and_scale():
@@ -80,35 +90,39 @@ for path in sorted(glob.glob("/sys/class/drm/card*-*/")):
 if best and scale:
     print(round(best / scale))
 PY
+)"
+    if [ -n "$res" ]; then
+        ( umask 077; printf '%s\n' "$res" > "$cache" 2>/dev/null || true )
+        printf '%s\n' "$res"
+    fi
 }
 
 # Emit the density correction, or nothing when the display is close enough to
 # what the CSS assumes that rescaling would be noise.
 density_css() {
     local ppi="$1"
-    python3 - "$ppi" "$TUNED_PPI" <<'PY'
-import sys
-ppi, tuned = float(sys.argv[1]), float(sys.argv[2])
-ratio = ppi / tuned
-if ratio < 1.12:
-    sys.exit(0)
-icon = round(16 * ratio)
-hpad = round(6 * ratio)
-print(f"""
-/* ---------- Display density -------------------------------------------
- * Sizes above are logical pixels tuned for {tuned:.0f} logical PPI. This
- * display measures {ppi:.0f}, so the same numbers land {(1 - 1/ratio) * 100:.0f}% smaller than
- * drawn. Scale the top bar status icons — wifi, bluetooth, volume, battery —
- * back to their intended size. Generated at install time by install.sh. */
-#panel .panel-button .system-status-icon {{
-  icon-size: {icon}px;
-  padding: 4px;
-}}
-#panel .panel-button {{
-  -natural-hpadding: {hpad}px;
-  -minimum-hpadding: {max(hpad - 2, 3)}px;
-}}""")
-PY
+    awk -v ppi="$ppi" -v tuned="$TUNED_PPI" 'BEGIN {
+        ratio = ppi / tuned
+        if (ratio < 1.12) exit 0
+        icon = int(16 * ratio + 0.5)
+        hpad = int(6 * ratio + 0.5)
+        min_hpad = hpad - 2
+        if (min_hpad < 3) min_hpad = 3
+        pct = int((1 - 1/ratio) * 100 + 0.5)
+        printf "/* ---------- Display density -------------------------------------------\n"
+        printf " * Sizes above are logical pixels tuned for %.0f logical PPI. This\n", tuned
+        printf " * display measures %.0f, so the same numbers land %.0f%% smaller than\n", ppi, pct
+        printf " * drawn. Scale the top bar status icons — wifi, bluetooth, volume, battery —\n"
+        printf " * back to their intended size. Generated at install time by install.sh. */\n"
+        printf "#panel .panel-button .system-status-icon {\n"
+        printf "  icon-size: %dpx;\n", icon
+        printf "  padding: 4px;\n"
+        printf "}\n"
+        printf "#panel .panel-button {\n"
+        printf "  -natural-hpadding: %dpx;\n", hpad
+        printf "  -minimum-hpadding: %dpx;\n", min_hpad
+        printf "}\n"
+    }'
 }
 
 # css/gtk4-transparency.css is written at the shipped level — the sheet is
@@ -283,8 +297,14 @@ install_transparency_css() {
         mkdir -p "$CONF_DIR"
         printf '%s\n' "$level" > "$CONF_DIR/app-transparency"
     fi
-    local pct
-    pct="$(python3 -c 'import sys; print(round(float(sys.argv[1])*100))' "$level" 2>/dev/null || echo "$level")"
+    local pct="$level"
+    if [[ "$level" =~ ^([0-9]*)\.([0-9]+)$ ]]; then
+        local whole="${BASH_REMATCH[1]:-0}" frac="${BASH_REMATCH[2]}" f2="${frac:0:2}"
+        [ "${#f2}" -eq 1 ] && f2="${f2}0"
+        local round_up=0
+        [ "${frac:2:1}" -ge 5 ] 2>/dev/null && round_up=1
+        pct="$(( 10#$whole * 100 + 10#$f2 + round_up ))"
+    fi
     ok "app windows translucent at $level (${pct}% opacity, remembered for later runs)"
 }
 

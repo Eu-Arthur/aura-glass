@@ -18,7 +18,7 @@ set -euo pipefail
 icons_kept() {
     local pack=""
     if [ -r "$HOME/.config/aura-glass/icon-pack" ]; then
-        pack="$(cat "$HOME/.config/aura-glass/icon-pack")"
+        IFS= read -r pack < "$HOME/.config/aura-glass/icon-pack" 2>/dev/null || pack=""
     fi
     [ "$pack" = keep ]
 }
@@ -26,9 +26,9 @@ icons_kept() {
 BASE="${AURA_GLASS_ICONS:-${TAHOE_GLASS_ICONS:-}}"
 if [ -z "$BASE" ]; then
     if [ -r "$HOME/.config/aura-glass/icons" ]; then
-        BASE="$(cat "$HOME/.config/aura-glass/icons")"
+        IFS= read -r BASE < "$HOME/.config/aura-glass/icons" 2>/dev/null || BASE=""
     elif [ -r "$HOME/.config/tahoe-glass/icons" ]; then
-        BASE="$(cat "$HOME/.config/tahoe-glass/icons")"
+        IFS= read -r BASE < "$HOME/.config/tahoe-glass/icons" 2>/dev/null || BASE=""
     fi
 fi
 BASE="${BASE:-Colloid}"
@@ -52,14 +52,15 @@ apply() {
     # that half rather than swapped for something that would look wrong.
     want=""
     for c in "$BASE-$variant" \
-             "$BASE-$(printf '%s' "$variant" | tr '[:upper:]' '[:lower:]')" \
+             "$BASE-${variant,,}" \
              "$BASE"; do
         if have_theme "$c"; then want="$c"; break; fi
     done
     [ -n "$want" ] || return 0
 
     local cur
-    cur="$(gsettings get org.gnome.desktop.interface icon-theme 2>/dev/null | tr -d \")"
+    cur="$(gsettings get org.gnome.desktop.interface icon-theme 2>/dev/null || true)"
+    cur="${cur//\"/}"
     cur="${cur#\'}"; cur="${cur%\'}"
     [ "$cur" = "$want" ] && return 0
     gsettings set org.gnome.desktop.interface icon-theme "$want"

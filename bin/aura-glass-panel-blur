@@ -30,7 +30,7 @@ rebuild() {
     [ "$(dconf read "$KEY" 2>/dev/null)" = "true" ] || return 0
     sleep "$SETTLE"
     dconf write "$KEY" false
-    sleep 1
+    sleep 0.2
     dconf write "$KEY" true
 }
 

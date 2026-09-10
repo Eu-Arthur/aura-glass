@@ -197,8 +197,7 @@ apply_app_opacity() {
 
     run dconf write "$base/applications/opacity" "$opacity"
     if [ "$opacity" != 255 ]; then
-        local pct
-        pct="$(python3 -c 'import sys; print(round(float(sys.argv[1]) / 255.0 * 100))' "$opacity" 2>/dev/null || echo "$opacity")"
+        local pct=$(( (opacity * 100 + 127) / 255 ))
         ok "window actor opacity set to $opacity (${pct}% opacity, translucent blur for apps)"
     else
         ok "window actor opacity set to 255 (opaque actor)"
@@ -357,16 +356,22 @@ app_blur_lines() {
 # and relying on the two staying in agreement is a bet with no upside.
 # tools/check-app-blur-lists.sh parses the result back with GLib's own parser.
 app_blur_literal() {
-    python3 -c '
-import sys
-
-
-def gvariant(s):
-    return "\x27" + s.replace("\\", "\\\\").replace("\x27", "\\\x27") + "\x27"
-
-
-lines = [l.strip() for l in sys.stdin]
-print("[%s]" % ", ".join(gvariant(l) for l in lines if l))'
+    local line item first=1 out="["
+    while IFS= read -r line || [ -n "$line" ]; do
+        line="${line#"${line%%[![:space:]]*}"}"
+        line="${line%"${line##*[![:space:]]}"}"
+        [ -n "$line" ] || continue
+        item="${line//\\/\\\\}"
+        item="${item//\'/\\\'}"
+        if [ "$first" = 1 ]; then
+            out="${out}'${item}'"
+            first=0
+        else
+            out="${out}, '${item}'"
+        fi
+    done
+    out="${out}]"
+    printf '%s\n' "$out"
 }
 
 # The window blur is its own opt-in, not a consequence of anything else.
