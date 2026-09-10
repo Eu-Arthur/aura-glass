@@ -1,0 +1,291 @@
+#!/usr/bin/env bash
+#
+# aura-glass-doctor — environment diagnostics, health check and troubleshooting.
+#
+# Usage:
+#   aura-glass-doctor [--json] [--quiet]
+#
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=lib/common.sh
+. "$REPO_ROOT/lib/common.sh"
+# shellcheck source=lib/distro.sh
+. "$REPO_ROOT/lib/distro.sh"
+# shellcheck source=lib/steps.sh
+. "$REPO_ROOT/lib/steps.sh"
+
+C_CYA="${C_CYA:-$'\033[0;36m'}"
+[ -t 1 ] || C_CYA=""
+
+JSON_MODE=0
+QUIET_MODE=0
+
+for arg in "$@"; do
+    case "$arg" in
+        --json) JSON_MODE=1 ;;
+        -q|--quiet) QUIET_MODE=1 ;;
+        -h|--help)
+            cat <<EOF
+aura-glass-doctor — system diagnostics and health check
+
+Usage:
+  aura-glass-doctor [options]
+
+Options:
+  --json       output results as structured JSON
+  -q, --quiet  suppress output, return exit code 0 if healthy, 1 if problems
+  -h, --help   display this help message
+EOF
+            exit 0
+            ;;
+        *)
+            echo "aura-glass-doctor: unknown option '$arg'" >&2
+            exit 2
+            ;;
+    esac
+done
+
+detect_distro
+
+items_category=()
+items_name=()
+items_status=()
+items_detail=()
+items_suggestion=()
+
+record() {
+    local cat="$1" name="$2" status="$3" detail="$4" sugg="${5:-}"
+    items_category+=("$cat")
+    items_name+=("$name")
+    items_status+=("$status")
+    items_detail+=("$detail")
+    items_suggestion+=("$sugg")
+}
+
+# 1. Desktop & Shell environment
+major=""
+if have gnome-shell; then
+    major="$(gnome_major 2>/dev/null || echo "")"
+fi
+
+if [ -z "$major" ]; then
+    record "Environment" "GNOME Shell" "FAIL" "gnome-shell not found or not in PATH" "Install GNOME Shell 48, 49 or 50."
+elif [ "$major" -ge 48 ] && [ "$major" -le 50 ]; then
+    record "Environment" "GNOME Shell" "OK" "GNOME Shell $major (fully supported)"
+elif [ "$major" -ge 45 ] && [ "$major" -lt 48 ]; then
+    record "Environment" "GNOME Shell" "WARN" "GNOME Shell $major (legacy release; 48-50 recommended)" "Consider upgrading to GNOME 48+."
+else
+    record "Environment" "GNOME Shell" "WARN" "GNOME Shell $major (untested release)" "Aura Glass is tested on GNOME 48-50."
+fi
+
+session="${XDG_SESSION_TYPE:-unknown}"
+case "$session" in
+    wayland) record "Environment" "Session Type" "OK" "Wayland (recommended for glass blur)" ;;
+    x11)     record "Environment" "Session Type" "WARN" "X11 (Wayland recommended for optimal blur performance)" ;;
+    *)       record "Environment" "Session Type" "WARN" "Unknown or headless session ($session)" ;;
+esac
+
+# GPU & DRM Acceleration
+gpu_found=0
+for _card in /sys/class/drm/card*/device/gpu_busy_percent; do
+    if [ -r "$_card" ]; then
+        gpu_found=1
+        record "Hardware" "GPU DRM Interface" "OK" "Hardware counter accessible (${_card##*/})"
+        break
+    fi
+done
+if [ "$gpu_found" = 0 ]; then
+    if [ -d /sys/class/drm ]; then
+        record "Hardware" "GPU DRM Interface" "OK" "DRM subsystem present"
+    else
+        record "Hardware" "GPU DRM Interface" "WARN" "No DRM GPU interface detected" "Software rendering may impact blur framerate."
+    fi
+fi
+
+# 2. Required Commands
+for cmd in "${REQUIRED_CMDS[@]}"; do
+    if [ "$cmd" = "sassc" ]; then
+        if have sassc; then
+            record "Tools (Required)" "sassc" "OK" "installed"
+        elif have dart-sass || have sass; then
+            record "Tools (Required)" "sassc" "OK" "Dart Sass available (with shim)"
+        else
+            record "Tools (Required)" "sassc" "FAIL" "missing executable" "Install sassc or dart-sass using your distribution package manager."
+        fi
+    elif have "$cmd"; then
+        record "Tools (Required)" "$cmd" "OK" "installed"
+    else
+        record "Tools (Required)" "$cmd" "FAIL" "missing executable" "Install $cmd using your distribution package manager."
+    fi
+done
+
+# 3. Optional Commands & Build Tools
+for cmd in "${OPTIONAL_CMDS[@]}"; do
+    if have "$cmd"; then
+        record "Tools (Optional)" "$cmd" "OK" "installed"
+    else
+        record "Tools (Optional)" "$cmd" "WARN" "optional tool not installed" "Install $cmd if building components from source."
+    fi
+done
+
+# 4. Python Environment & GI Toolkits
+if python3 - >/dev/null 2>&1 <<'PY'
+import gi
+gi.require_version("Adw", "1")
+gi.require_version("Gtk", "4.0")
+from gi.repository import Adw, Gtk
+PY
+then
+    record "Python" "PyGObject & Libadwaita" "OK" "Adw 1 & Gtk 4 bindings available"
+else
+    record "Python" "PyGObject & Libadwaita" "WARN" "PyGObject or Libadwaita missing" "Install PyGObject (python3-gi / python-gobject) for graphical wizard."
+fi
+
+if python3 -c "import PIL" 2>/dev/null; then
+    record "Python" "Pillow (PIL)" "OK" "Pillow image library available"
+else
+    record "Python" "Pillow (PIL)" "WARN" "Pillow missing" "Install python3-pillow for high-speed wallpaper blur in GDM sync."
+fi
+
+# 5. Core Extensions
+enabled_exts="$(gsettings get org.gnome.shell enabled-extensions 2>/dev/null || echo '@as []')"
+
+check_ext() {
+    local uuid="$1" label="$2"
+    local installed=0 enabled=0
+    if [ -d "$EXT_DIR/$uuid" ] || [ -d "/usr/share/gnome-shell/extensions/$uuid" ]; then
+        installed=1
+    fi
+    case "$enabled_exts" in
+        *"'$uuid'"*) enabled=1 ;;
+    esac
+
+    if [ "$installed" = 1 ] && [ "$enabled" = 1 ]; then
+        record "Extensions" "$label" "OK" "installed and enabled"
+    elif [ "$installed" = 1 ] && [ "$enabled" = 0 ]; then
+        record "Extensions" "$label" "WARN" "installed but not enabled" "Enable with: gnome-extensions enable $uuid"
+    else
+        record "Extensions" "$label" "WARN" "not installed" "Run ./install.sh to install core extensions."
+    fi
+}
+
+check_ext "$BMS_UUID" "Blur My Shell"
+check_ext "openbar@neuromorph" "Open Bar"
+check_ext "custom-osd@neuromorph" "Custom OSD"
+check_ext "user-theme@gnome-shell-extensions.gcampax.github.com" "User Themes"
+
+# 6. Systemd User Units
+check_service() {
+    local unit="$1"
+    if ! have systemctl; then
+        return
+    fi
+    local active enabled
+    active="$(systemctl --user is-active "$unit" 2>/dev/null || echo "inactive")"
+    enabled="$(systemctl --user is-enabled "$unit" 2>/dev/null || echo "disabled")"
+    if [ "$active" = "active" ]; then
+        record "Services" "$unit" "OK" "active ($enabled)"
+    elif [ "$enabled" = "enabled" ]; then
+        record "Services" "$unit" "WARN" "enabled but inactive" "Start with: systemctl --user start $unit"
+    else
+        record "Services" "$unit" "INFO" "not enabled / inactive"
+    fi
+}
+
+check_service "aura-glass-gdm-sync.service"
+check_service "aura-glass-panel-blur.service"
+check_service "aura-glass-icon-sync.service"
+check_service "aura-glass-update-check.timer"
+
+# 7. Theme Installation & Files
+if [ -d "$HOME/.themes/Aura-Glass" ]; then
+    record "Theme" "Aura-Glass Theme Dir" "OK" "$HOME/.themes/Aura-Glass present"
+else
+    record "Theme" "Aura-Glass Theme Dir" "WARN" "theme directory not yet installed" "Run ./install.sh to deploy theme."
+fi
+
+if [ -d "$CONF_DIR" ]; then
+    record "Theme" "Config Directory" "OK" "$CONF_DIR present"
+else
+    record "Theme" "Config Directory" "WARN" "$CONF_DIR not yet created" "Run ./install.sh to create configuration."
+fi
+
+# Count statistics
+ok_cnt=0
+warn_cnt=0
+fail_cnt=0
+for st in "${items_status[@]}"; do
+    case "$st" in
+        OK)   ok_cnt=$((ok_cnt + 1)) ;;
+        WARN) warn_cnt=$((warn_cnt + 1)) ;;
+        FAIL) fail_cnt=$((fail_cnt + 1)) ;;
+    esac
+done
+
+# Output: JSON
+if [ "$JSON_MODE" = 1 ]; then
+    printf '{\n  "summary": {"ok": %d, "warn": %d, "fail": %d},\n  "checks": [\n' \
+        "$ok_cnt" "$warn_cnt" "$fail_cnt"
+    first=1
+    for i in "${!items_name[@]}"; do
+        [ "$first" = 1 ] || printf ',\n'
+        first=0
+        cat_esc="${items_category[$i]//\"/\\\"}"
+        name_esc="${items_name[$i]//\"/\\\"}"
+        st_esc="${items_status[$i]//\"/\\\"}"
+        det_esc="${items_detail[$i]//\"/\\\"}"
+        sug_esc="${items_suggestion[$i]//\"/\\\"}"
+        printf '    {"category": "%s", "name": "%s", "status": "%s", "detail": "%s", "suggestion": "%s"}' \
+            "$cat_esc" "$name_esc" "$st_esc" "$det_esc" "$sug_esc"
+    done
+    printf '\n  ]\n}\n'
+    [ "$fail_cnt" -eq 0 ] && exit 0 || exit 1
+fi
+
+# Output: Quiet
+if [ "$QUIET_MODE" = 1 ]; then
+    [ "$fail_cnt" -eq 0 ] && exit 0 || exit 1
+fi
+
+# Output: Colorized CLI report
+printf '\n%s=== Aura Glass Doctor — Health & Diagnostics ===%s\n\n' "$C_BLD" "$C_OFF"
+
+current_cat=""
+for i in "${!items_name[@]}"; do
+    cat="${items_category[$i]}"
+    if [ "$cat" != "$current_cat" ]; then
+        [ -z "$current_cat" ] || printf '\n'
+        printf '%s[%s]%s\n' "$C_CYA" "$cat" "$C_OFF"
+        current_cat="$cat"
+    fi
+    st="${items_status[$i]}"
+    case "$st" in
+        OK)   badge="${C_GRN}[  OK  ]${C_OFF}" ;;
+        WARN) badge="${C_YEL}[ WARN ]${C_OFF}" ;;
+        FAIL) badge="${C_RED}[ FAIL ]${C_OFF}" ;;
+        *)    badge="${C_DIM}[ INFO ]${C_OFF}" ;;
+    esac
+    printf '  %-8s %-26s %s\n' "$badge" "${items_name[$i]}" "${items_detail[$i]}"
+    if [ -n "${items_suggestion[$i]}" ] && [ "$st" != "OK" ]; then
+        printf '           %s-> Suggestion: %s%s\n' "$C_DIM" "${items_suggestion[$i]}" "$C_OFF"
+    fi
+done
+
+printf '\n%s------------------------------------------------%s\n' "$C_DIM" "$C_OFF"
+if [ "$fail_cnt" -eq 0 ]; then
+    if [ "$warn_cnt" -eq 0 ]; then
+        printf '%sAll %d checks passed! Your system is perfectly configured for Aura Glass.%s\n\n' \
+            "$C_GRN" "$ok_cnt" "$C_OFF"
+    else
+        printf '%sSystem healthy: %d passed, %d warning(s), 0 failures.%s\n\n' \
+            "$C_GRN" "$ok_cnt" "$warn_cnt" "$C_OFF"
+    fi
+    exit 0
+else
+    printf '%sDiagnostics found %d error(s) and %d warning(s) out of %d checks.%s\n' \
+        "$C_RED" "$fail_cnt" "$warn_cnt" "${#items_name[@]}" "$C_OFF"
+    printf '%sPlease resolve the [ FAIL ] items above before continuing.%s\n\n' \
+        "$C_YEL" "$C_OFF"
+    exit 1
+fi

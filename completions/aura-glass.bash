@@ -47,7 +47,7 @@ _aura_glass_install() {
           --static-popup-blur --notification-blur --no-notification-blur \
           --app-transparency --panel-transparency --gdm --no-gdm --gdm-monitors \
           --reinstall --update --dry-run -n --interactive -y --yes --help -h \
-          --settings-only --styling-off --styling-on"
+          --settings-only --styling-off --styling-on --doctor"
 
     if [[ "$cur" == -* ]]; then
         COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
@@ -110,7 +110,16 @@ _aura_glass_ext() {
     fi
 }
 
+_aura_glass_doctor() {
+    local cur="${COMP_WORDS[COMP_CWORD]}"
+    if [[ "$cur" == -* ]]; then
+        COMPREPLY=( $(compgen -W "--json --quiet -q --help -h" -- "$cur") )
+        return 0
+    fi
+}
+
 complete -F _aura_glass_install install.sh ./install.sh aura-glass-apply ./bin/aura-glass-apply bin/aura-glass-apply
 complete -F _aura_glass_uninstall uninstall.sh ./uninstall.sh
 complete -F _aura_glass_update_check aura-glass-update-check ./bin/aura-glass-update-check bin/aura-glass-update-check
 complete -F _aura_glass_ext aura-glass-ext ./bin/aura-glass-ext bin/aura-glass-ext
+complete -F _aura_glass_doctor aura-glass-doctor ./bin/aura-glass-doctor bin/aura-glass-doctor

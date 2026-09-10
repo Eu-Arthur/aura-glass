@@ -292,6 +292,7 @@ ${C_BLD}aura-glass${C_OFF} — a fluid frosted-glass desktop for GNOME 48-50
     --force           reinstall things that are already present
     -y, --yes         answer yes to every prompt (non-interactive)
     -n, --dry-run     print what would happen, change nothing
+    --doctor          run system health check and diagnostics
     -h, --help        this
 
   ${C_BLD}after installing${C_OFF}
@@ -418,6 +419,7 @@ parse_flags() {
         --force)         FORCE=1; EXPLICIT_FLAGS=1; shift ;;
         -y|--yes)        ASSUME_YES=1; EXPLICIT_FLAGS=1; shift ;;
         -n|--dry-run)    DRY_RUN=1; EXPLICIT_FLAGS=1; shift ;;
+        --doctor)        shift; exec "$REPO_ROOT/bin/aura-glass-doctor" "$@" ;;
         -h|--help)       usage; exit 0 ;;
         *)               usage; die "unknown option: $1" ;;
     esac
