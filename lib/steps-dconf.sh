@@ -192,7 +192,7 @@ apply_app_opacity() {
     run dconf write "$base/applications/opacity" "$opacity"
     if [ "$opacity" != 255 ]; then
         local pct
-        pct="$(python3 -c "print(round($opacity / 255.0 * 100))" 2>/dev/null || echo "$opacity")"
+        pct="$(python3 -c 'import sys; print(round(float(sys.argv[1]) / 255.0 * 100))' "$opacity" 2>/dev/null || echo "$opacity")"
         ok "window actor opacity set to $opacity (${pct}% opacity, translucent blur for apps)"
     else
         ok "window actor opacity set to 255 (opaque actor)"

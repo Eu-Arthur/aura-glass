@@ -893,12 +893,13 @@ EOF
 
     trans_desc="0 (Opaque)"
     if [ -n "${APP_TRANSPARENCY:-}" ] && [ "$APP_TRANSPARENCY" != 0 ] && [ "$APP_TRANSPARENCY" != "0.0" ]; then
-        pct="$(python3 -c "
-v = '$APP_TRANSPARENCY'.rstrip('%')
+        pct="$(python3 -c '
+import sys
+v = sys.argv[1].rstrip("%")
 f = float(v)
 if f > 1.0: f = f / 100.0 if f <= 100 else f / 255.0
 print(round(f * 100))
-" 2>/dev/null || echo "$APP_TRANSPARENCY")"
+' "$APP_TRANSPARENCY" 2>/dev/null || echo "$APP_TRANSPARENCY")"
         trans_desc="${pct}% Opacity (level ${APP_TRANSPARENCY}, actor: ${APP_OPACITY:-230})"
     fi
 

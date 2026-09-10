@@ -284,7 +284,7 @@ install_transparency_css() {
         printf '%s\n' "$level" > "$CONF_DIR/app-transparency"
     fi
     local pct
-    pct="$(python3 -c "print(round(float('$level')*100))" 2>/dev/null || echo "$level")"
+    pct="$(python3 -c 'import sys; print(round(float(sys.argv[1])*100))' "$level" 2>/dev/null || echo "$level")"
     ok "app windows translucent at $level (${pct}% opacity, remembered for later runs)"
 }
 

@@ -14,6 +14,12 @@ ExecStart=%h/.local/bin/aura-glass-icon-sync
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=true
+ProtectSystem=full
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
 
 [Install]
 WantedBy=graphical-session.target

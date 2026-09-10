@@ -279,6 +279,7 @@ preflight() {
     esac
 
     run mkdir -p "$CONF_DIR" "$BACKUP_DIR" "$SRC_CACHE" "$EXT_DIR"
+    run chmod 700 "$CONF_DIR" "$BACKUP_DIR" 2>/dev/null || true
 
     # Before anything is applied, and only ever the first time: this is what
     # --icons original and --cursors original restore to. Idempotent after that,

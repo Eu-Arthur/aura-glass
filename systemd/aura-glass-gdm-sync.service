@@ -9,6 +9,11 @@ ExecStart=%h/.local/bin/aura-glass-gdm-sync
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
 
 [Install]
 WantedBy=graphical-session.target

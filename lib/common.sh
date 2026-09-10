@@ -253,6 +253,8 @@ fetch_zip_pinned() {
             die "$url does not match its pinned checksum (expected $sha, got $got)"
         fi
     fi
+    unzip -tq "$tmp/archive.zip" \
+        || { rm -rf "$tmp"; die "archive is corrupt or invalid zip: $url"; }
     rm -rf "$dest"
     mkdir -p "$dest"
     unzip -qo "$tmp/archive.zip" -d "$dest" -x '__MACOSX/*' '*/.DS_Store' \
