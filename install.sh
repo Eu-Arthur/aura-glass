@@ -1103,9 +1103,11 @@ if [ "$RADIUS_PRESET" = custom ]; then
         # anything new should not start failing at `custom` because of it. A
         # --radius-custom typed today still has to be eight, below — this
         # only widens what an old memo is read as.
-        if [ -n "$RADIUS_CUSTOM" ] \
-                && [ "$(printf '%s' "$RADIUS_CUSTOM" | awk -F, '{print NF}')" = 7 ]; then
-            RADIUS_CUSTOM="$RADIUS_CUSTOM,9999"
+        if [ -n "$RADIUS_CUSTOM" ]; then
+            IFS=',' read -r -a _rc_check <<< "$RADIUS_CUSTOM"
+            if [ "${#_rc_check[@]}" -eq 7 ]; then
+                RADIUS_CUSTOM="$RADIUS_CUSTOM,9999"
+            fi
         fi
     fi
     [ -n "$RADIUS_CUSTOM" ] \
@@ -1115,10 +1117,16 @@ if [ "$RADIUS_PRESET" = custom ]; then
     # presets already cover, except the OSD's ceiling, which is lower than
     # arithmetic would suggest and is documented at TOKEN_RADIUS_OSD.
     radius_bounds
+    IFS=',' read -r -a _rc_vals <<< "$RADIUS_CUSTOM"
+    [ "${#_rc_vals[@]}" -le 8 ] \
+        || die "--radius-custom takes eight values, got more"
+    [ "${#_rc_vals[@]}" -eq 8 ] \
+        || die "--radius-custom needs eight whole numbers of pixels, got '$RADIUS_CUSTOM'"
+
     _rc_names="WINDOW MENU QUICK_SETTINGS NOTIFICATION DIALOG POPUP OSD BUTTON"
-    _rc_i=1
+    _rc_i=0
     for _rc_name in $_rc_names; do
-        _rc_val="$(printf '%s' "$RADIUS_CUSTOM" | cut -d, -f"$_rc_i")"
+        _rc_val="${_rc_vals[$_rc_i]}"
         case "$_rc_val" in
             ''|*[!0-9]*) die "--radius-custom needs eight whole numbers of pixels, got '$RADIUS_CUSTOM'" ;;
         esac
@@ -1129,9 +1137,6 @@ if [ "$RADIUS_PRESET" = custom ]; then
         eval "TOKEN_RADIUS_$_rc_name=\$_rc_val"
         _rc_i=$((_rc_i + 1))
     done
-    # A ninth field is a typo, not a value that happens not to be read.
-    [ -z "$(printf '%s' "$RADIUS_CUSTOM" | cut -d, -f9)" ] \
-        || die "--radius-custom takes eight values, got more"
 else
     # Sets the eight TOKEN_RADIUS_* values for this run, which is what
     # apply_radius_css and apply_radius_dconf both read. Validated here rather
@@ -1193,8 +1198,8 @@ if frac > 1.00:
 print(f"{frac:.2f}\n{op}")
 PY
 )"
-    APP_TRANSPARENCY="$(printf '%s\n' "$norm_res" | head -n 1)"
-    APP_OPACITY="$(printf '%s\n' "$norm_res" | tail -n 1)"
+    APP_TRANSPARENCY="${norm_res%%$'\n'*}"
+    APP_OPACITY="${norm_res##*$'\n'}"
 fi
 APP_TRANSPARENCY="${APP_TRANSPARENCY:-0}"
 APP_OPACITY="${APP_OPACITY:-255}"

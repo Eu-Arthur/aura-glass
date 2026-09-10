@@ -49,7 +49,7 @@ sweep_theme_orphans() {
              "$HOME/.themes/$THEME_NAME".replacing.*; do
         [ -e "$d" ] || continue
         run rm -rf "$d"
-        [ "${DRY_RUN:-0}" = 1 ] || ok "removed orphaned $(basename "$d")"
+        [ "${DRY_RUN:-0}" = 1 ] || ok "removed orphaned ${d##*/}"
     done
 }
 
@@ -159,7 +159,7 @@ migrate_dir() {
 
     if [ ! -d "$to" ]; then
         run mv "$from" "$to"
-        [ "${DRY_RUN:-0}" = 1 ] || ok "moved $what to $(basename "$to")"
+        [ "${DRY_RUN:-0}" = 1 ] || ok "moved $what to ${to##*/}"
         return 0
     fi
 
@@ -184,7 +184,7 @@ migrate_dir() {
     fi
 
     rm -rf "$from"
-    ok "merged $what into $(basename "$to")"
+    ok "merged $what into ${to##*/}"
 }
 
 migrate_legacy_names() {

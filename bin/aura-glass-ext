@@ -50,12 +50,21 @@ EOF
 ext_tier() {
     local uuid="$1" u
     for u in "${EXT_CORE[@]}" openbar@neuromorph "$BMS_UUID" custom-osd@neuromorph; do
-        [ "$u" = "$uuid" ] && { printf 'core'; return; }
+        if [ "$u" = "$uuid" ]; then
+            _EXT_TIER='core'
+            [ "$#" -gt 1 ] || printf 'core'
+            return
+        fi
     done
     for u in "${EXT_EXTRA_RECOMMENDED[@]}"; do
-        [ "$u" = "$uuid" ] && { printf 'recommended'; return; }
+        if [ "$u" = "$uuid" ]; then
+            _EXT_TIER='recommended'
+            [ "$#" -gt 1 ] || printf 'recommended'
+            return
+        fi
     done
-    printf 'full'
+    _EXT_TIER='full'
+    [ "$#" -gt 1 ] || printf 'full'
 }
 
 ext_installed() {
@@ -86,22 +95,41 @@ ext_known() {
     return 1
 }
 
-json_escape() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+json_escape() {
+    local s="${1//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    printf '%s' "$s"
+}
 
 cmd_list() {
     local first=1 uuid
+    local enabled_exts
+    enabled_exts="$(gsettings get org.gnome.shell enabled-extensions 2>/dev/null || echo '@as []')"
     printf '[\n'
     for uuid in "${EXT_CORE[@]}" openbar@neuromorph "$BMS_UUID" \
                 custom-osd@neuromorph "${EXT_EXTRA_ALL[@]}"; do
         [ "$first" = 1 ] || printf ',\n'
         first=0
-        printf '  {"uuid": "%s", "tier": "%s", "description": "%s", ' \
-            "$(json_escape "$uuid")" "$(ext_tier "$uuid")" \
-            "$(json_escape "$(ext_description "$uuid")")"
-        printf '"installed": %s, "enabled": %s, "system": %s}' \
-            "$(ext_installed "$uuid" && echo true || echo false)" \
-            "$(ext_enabled "$uuid" && echo true || echo false)" \
-            "$([ -d "/usr/share/gnome-shell/extensions/$uuid" ] && echo true || echo false)"
+        local tier desc esc_uuid esc_desc inst=false en=false sys=false
+        ext_tier "$uuid" 1
+        tier="$_EXT_TIER"
+        ext_description "$uuid" 1
+        desc="$_EXT_DESC"
+        esc_uuid="${uuid//\\/\\\\}"
+        esc_uuid="${esc_uuid//\"/\\\"}"
+        esc_desc="${desc//\\/\\\\}"
+        esc_desc="${esc_desc//\"/\\\"}"
+        if [ -d "$EXT_DIR/$uuid" ] || [ -d "/usr/share/gnome-shell/extensions/$uuid" ]; then
+            inst=true
+        fi
+        case "$enabled_exts" in
+            *"'$uuid'"*) en=true ;;
+        esac
+        if [ -d "/usr/share/gnome-shell/extensions/$uuid" ]; then
+            sys=true
+        fi
+        printf '  {"uuid": "%s", "tier": "%s", "description": "%s", "installed": %s, "enabled": %s, "system": %s}' \
+            "$esc_uuid" "$tier" "$esc_desc" "$inst" "$en" "$sys"
     done
     printf '\n]\n'
 }

@@ -303,7 +303,7 @@ if [ "$REMOVE_ASSETS" = 1 ]; then
              "$HOME/.themes/Aura-Glass".replacing.*; do
         [ -e "$d" ] || continue
         run rm -rf "$d"
-        ok "removed $(basename "$d")"
+        ok "removed ${d##*/}"
     done
     # Reversal is matched as well as Colloid: --icons reversal installs it, and
     # install rewrites its pan-*.svg in place with no backup, so leaving the
@@ -311,7 +311,7 @@ if [ "$REMOVE_ASSETS" = 1 ]; then
     for d in "$HOME"/.local/share/icons/Colloid* "$HOME"/.local/share/icons/Reversal* \
              "$HOME"/.local/share/icons/Hatter* "$HOME"/.local/share/icons/MacTahoe* \
              "$HOME"/.local/share/icons/aosp-cursors; do
-        [ -e "$d" ] && { run rm -rf "$d"; ok "removed $(basename "$d")"; }
+        [ -e "$d" ] && { run rm -rf "$d"; ok "removed ${d##*/}"; }
     done
     # Everything --font downloaded lives under this one directory, and nothing
     # else does — a font installed by the distro or dropped in by hand sits

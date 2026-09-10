@@ -29,7 +29,10 @@ done
 python3 "$REPO_ROOT/tools/gpu-sample.py" --probe >/dev/null || {
     echo "no GPU counter on this machine — see tools/gpu-sample.py"; exit 1; }
 
-CARD="$(ls /sys/class/drm/card*/device/gpu_busy_percent 2>/dev/null | head -1)"
+CARD=""
+for _c in /sys/class/drm/card*/device/gpu_busy_percent; do
+    [ -r "$_c" ] && { CARD="$_c"; break; }
+done
 
 say() { printf '\033[1;36m::\033[0m %s\n' "$*"; }
 

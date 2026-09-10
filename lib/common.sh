@@ -146,13 +146,17 @@ prompt_logout() {
 patch_stamp_current() {
     local name="$1" patch="$2"
     [ -r "$CONF_DIR/$name" ] || return 1
-    [ "$(read_memo "$CONF_DIR/$name")" = "$(sha256sum "$patch" | cut -d' ' -f1)" ]
+    local current memo
+    memo="$(read_memo "$CONF_DIR/$name")"
+    current="$(sha256sum "$patch")"
+    [ "$memo" = "${current%% *}" ]
 }
 patch_stamp_write() {
     local name="$1" patch="$2"
     [ "${DRY_RUN:-0}" = 1 ] && return 0
     mkdir -p "$CONF_DIR"
-    sha256sum "$patch" | cut -d' ' -f1 > "$CONF_DIR/$name"
+    local sum; sum="$(sha256sum "$patch")"
+    printf '%s\n' "${sum%% *}" > "$CONF_DIR/$name"
 }
 
 # Clone at a pinned ref, or fetch that ref into an existing clone. Pinning
@@ -222,7 +226,7 @@ fetch_tarball_pinned() {
     local tmp; tmp="$(mktemp -d)"
     curl --connect-timeout 15 --retry 2 -fsSL -o "$tmp/archive" "$url" \
         || { rm -rf "$tmp"; die "could not download $url"; }
-    local got; got="$(sha256sum "$tmp/archive" | cut -d' ' -f1)"
+    local got; got="$(sha256sum "$tmp/archive")"; got="${got%% *}"
     if [ "$got" != "$sha" ]; then
         rm -rf "$tmp"
         die "$url does not match its pinned checksum (expected $sha, got $got)"
@@ -256,7 +260,7 @@ fetch_zip_pinned() {
     local tmp; tmp="$(mktemp -d)"
     curl --connect-timeout 15 --retry 2 -fsSL -o "$tmp/archive.zip" "$url" \
         || { rm -rf "$tmp"; die "could not download $url"; }
-    local got; got="$(sha256sum "$tmp/archive.zip" | cut -d' ' -f1)"
+    local got; got="$(sha256sum "$tmp/archive.zip")"; got="${got%% *}"
     if [ "$got" != "$sha" ]; then
         if [ "$on_mismatch" = warn ]; then
             warn "$url no longer matches its pinned checksum — upstream has published a new build (expected $sha, got $got)"
@@ -279,7 +283,7 @@ fetch_zip_pinned() {
 # are called gtk.css and would otherwise overwrite each other.
 backup_once() {
     local f="$1" dir="$2" name="${3:-}"
-    [ -n "$name" ] || name="$(basename "$f")"
+    [ -n "$name" ] || name="${f##*/}"
     local dst="$dir/$name.orig"
     # Never overwrite the first-run record, whichever kind it is.
     if [ -e "$dst" ] || [ -e "$dir/$name.absent" ]; then
@@ -339,10 +343,18 @@ gsettings_original() {
     cat "$BACKUP_DIR/$1.gsettings-orig" 2>/dev/null || true
 }
 
+_GNOME_MAJOR=""
 gnome_major() {
-    local v
-    v="$(gnome-shell --version 2>/dev/null | grep -oE '[0-9]+' | head -1)" || return 1
-    printf '%s' "$v"
+    if [ -n "$_GNOME_MAJOR" ]; then
+        printf '%s' "$_GNOME_MAJOR"
+        return 0
+    fi
+    local raw
+    raw="$(gnome-shell --version 2>/dev/null)" || return 1
+    if [[ "$raw" =~ [0-9]+ ]]; then
+        _GNOME_MAJOR="${BASH_REMATCH[0]}"
+        printf '%s' "$_GNOME_MAJOR"
+    fi
 }
 
 # How many screens this machine has, for the defaults that only earn their keep
@@ -350,7 +362,12 @@ gnome_major() {
 # session is actually driving; DRM's connector list covers the case where there
 # is no session to ask, and the larger of the two wins so a laptop with its lid
 # shut around an external screen still counts as the two monitors it has.
+_MONITOR_COUNT=""
 monitor_count() {
+    if [ -n "$_MONITOR_COUNT" ]; then
+        printf '%s' "$_MONITOR_COUNT"
+        return 0
+    fi
     local mutter=0 drm=0
 
     if have gdbus; then
@@ -368,5 +385,6 @@ monitor_count() {
 
     [ "$mutter" -gt "$drm" ] 2>/dev/null && drm="$mutter"
     [ "$drm" -gt 0 ] 2>/dev/null || drm=1
-    printf '%s' "$drm"
+    _MONITOR_COUNT="$drm"
+    printf '%s' "$_MONITOR_COUNT"
 }

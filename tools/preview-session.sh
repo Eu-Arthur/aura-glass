@@ -190,7 +190,9 @@ done
 GPU_CARD=""
 if [ "$TG_GPU" = 1 ]; then
     if python3 "$REPO_ROOT/tools/gpu-sample.py" --probe; then
-        GPU_CARD="$(ls /sys/class/drm/card*/device/gpu_busy_percent 2>/dev/null | head -1)"
+        for _c in /sys/class/drm/card*/device/gpu_busy_percent; do
+            [ -r "$_c" ] && { GPU_CARD="$_c"; break; }
+        done
     fi
     if [ -n "$GPU_CARD" ]; then
         say "sampling $GPU_CARD"

@@ -48,21 +48,21 @@ printf '\naura-glass pre-commit — checking the staged tree\n\n'
 # the hook's cwd, which git sets to the repository root — so every check would
 # quietly read the working tree it is the whole point of not reading.
 syntax_shell() {
-    local f rc=0
+    local files=()
     while IFS= read -r f; do
-        bash -n "$f" || rc=1
+        files+=("$f")
     done < <(find "$TMP" -type f \
                   \( -name '*.sh' -o -name '*.bash' -o -path "$TMP/bin/*" -o -path "$TMP/tools/hooks/*" \))
-    return "$rc"
+    [ "${#files[@]}" -eq 0 ] || bash -n "${files[@]}"
 }
 step "shell syntax" syntax_shell
 
 syntax_python() {
-    local f rc=0
+    local files=()
     while IFS= read -r f; do
-        python3 -m py_compile "$f" || rc=1
+        files+=("$f")
     done < <(find "$TMP" -type f -name '*.py')
-    return "$rc"
+    [ "${#files[@]}" -eq 0 ] || python3 -m py_compile "${files[@]}"
 }
 step "python syntax" syntax_python
 

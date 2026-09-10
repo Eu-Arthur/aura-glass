@@ -77,14 +77,22 @@ REQUIRED_CMDS=(git curl unzip sassc gsettings dconf gnome-extensions python3)
 # Non-fatal, the same tier as msgfmt below: what a missing GUI toolkit costs is
 # one optional window and a wizard that has a text twin, and every setting either
 # exposes is a flag that still works from the command line. Failing an install of
-# a *theme* over it would be absurd.
+_GUI_TOOLKIT_PRESENT=""
 gui_toolkit_present() {
-    python3 - >/dev/null 2>&1 <<'PY'
+    [ -n "$_GUI_TOOLKIT_PRESENT" ] && return "$_GUI_TOOLKIT_PRESENT"
+    if python3 - >/dev/null 2>&1 <<'PY'
 import gi
 gi.require_version("Adw", "1")
 gi.require_version("Gtk", "4.0")
 from gi.repository import Adw, Gtk
 PY
+    then
+        _GUI_TOOLKIT_PRESENT=0
+        return 0
+    else
+        _GUI_TOOLKIT_PRESENT=1
+        return 1
+    fi
 }
 
 # What it takes to get it, per family. One copy, read by both the hint that only
@@ -138,6 +146,7 @@ ensure_gui_toolkit() {
             ;;
     esac
 
+    _GUI_TOOLKIT_PRESENT=""
     gui_toolkit_present
 }
 

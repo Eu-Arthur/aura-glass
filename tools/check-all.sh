@@ -128,6 +128,7 @@ if [ "$JOBS" -gt 1 ]; then
 
     # Spawn jobs with limit $JOBS
     pids=()
+    running=0
     for i in "${!queue_label[@]}"; do
         log="$TMP_LOGS/$i.log"
         rc_f="$TMP_LOGS/$i.rc"
@@ -135,9 +136,11 @@ if [ "$JOBS" -gt 1 ]; then
         f="${queue_file[$i]}"
         ( "$exe" "$f" > "$log" 2>&1; echo $? > "$rc_f" ) &
         pids+=($!)
-        while [ "$(jobs -rp | wc -l)" -ge "$JOBS" ]; do
-            sleep 0.05
-        done
+        running=$((running + 1))
+        if [ "$running" -ge "$JOBS" ]; then
+            wait -n 2>/dev/null || true
+            running=$((running - 1))
+        fi
     done
 
     printf '\n%s[2/3] Shell Test Suites (running with %d jobs)%s\n' "$C_CYA" "$JOBS" "$C_OFF"
@@ -149,7 +152,7 @@ if [ "$JOBS" -gt 1 ]; then
         fi
         wait "${pids[$i]}" 2>/dev/null || true
         rc=1
-        [ -f "$TMP_LOGS/$i.rc" ] && rc="$(cat "$TMP_LOGS/$i.rc")"
+        [ -f "$TMP_LOGS/$i.rc" ] && read -r rc < "$TMP_LOGS/$i.rc"
         total=$((total + 1))
         printf '  %-35s ' "${queue_label[$i]}..."
         if [ "$rc" -eq 0 ]; then

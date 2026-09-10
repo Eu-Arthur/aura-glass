@@ -110,7 +110,7 @@ install_font_misans() {
     local dest; dest="$(font_dest misans)"
     local found=0 f
     while IFS= read -r f; do
-        cp "$f" "$dest/" || die "could not install $(basename "$f")"
+        cp "$f" "$dest/" || die "could not install ${f##*/}"
         found=1
     done < <(find "$latin" -type f \
                   \( -name 'MiSansLatin-Regular.ttf' -o -name 'MiSansLatin-Bold.ttf' \) \
@@ -180,7 +180,7 @@ install_font_sfpro() {
         for weight in Regular RegularItalic Bold BoldItalic; do
             f="$src/SF-Pro-$cut-$weight.otf"
             [ -f "$f" ] || continue
-            cp "$f" "$dest/" || die "could not install $(basename "$f")"
+            cp "$f" "$dest/" || die "could not install ${f##*/}"
             found=1
         done
     done

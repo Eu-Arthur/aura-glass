@@ -68,7 +68,7 @@ install_gui() {
     if [ "${DRY_RUN:-0}" = 1 ]; then
         info "dry-run: write $GUI_DESKTOP"
     else
-        mkdir -p "$(dirname "$GUI_DESKTOP")"
+        mkdir -p "${GUI_DESKTOP%/*}"
         cat > "$GUI_DESKTOP" <<EOF
 [Desktop Entry]
 Type=Application
@@ -139,7 +139,7 @@ install_first_open_autostart() {
     if [ "${DRY_RUN:-0}" = 1 ]; then
         info "dry-run: write $autostart"
     else
-        mkdir -p "$(dirname "$autostart")"
+        mkdir -p "${autostart%/*}"
         cat > "$autostart" <<EOF
 [Desktop Entry]
 Type=Application

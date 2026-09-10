@@ -198,49 +198,52 @@ EXT_EXTRA=("${EXT_EXTRA_RECOMMENDED[@]}")
 
 # Helper to describe an extension UUID
 ext_description() {
+    local d
     case "$1" in
         # The four the theme is built out of. They had no entry here while this
         # was only read for the optional tiers; the settings window lists them
         # too, and a row titled with a bare UUID is not a description.
         user-theme@gnome-shell-extensions.gcampax.github.com)
-            printf 'User Themes — lets the shell load a theme from your home directory' ;;
+            d='User Themes — lets the shell load a theme from your home directory' ;;
         openbar@neuromorph)
-            printf 'Open Bar — paints the panel, menus and popups this theme styles' ;;
+            d='Open Bar — paints the panel, menus and popups this theme styles' ;;
         blur-my-shell@aunetx)
-            printf 'Blur My Shell — the blur behind windows, popups and the panel' ;;
+            d='Blur My Shell — the blur behind windows, popups and the panel' ;;
         custom-osd@neuromorph)
-            printf 'Custom OSD — the volume and brightness pill' ;;
+            d='Custom OSD — the volume and brightness pill' ;;
         just-perfection-desktop@just-perfection)
-            printf 'Just Perfection — GNOME UI tweaker & visibility manager' ;;
+            d='Just Perfection — GNOME UI tweaker & visibility manager' ;;
         gnome-ui-tune@itstime.tech)
-            printf 'GNOME UI Tune — Overview 300%% thumbnail enlargement & tweaks' ;;
+            d='GNOME UI Tune — Overview 300% thumbnail enlargement & tweaks' ;;
         space-bar@luchrioh)
-            printf 'Space Bar — macOS/i3-style workspace pill indicator in panel' ;;
+            d='Space Bar — macOS/i3-style workspace pill indicator in panel' ;;
         appindicatorsupport@rgcjonas.gmail.com)
-            printf 'AppIndicator Support — System tray icons (Steam, Discord, Slack, etc.)' ;;
+            d='AppIndicator Support — System tray icons (Steam, Discord, Slack, etc.)' ;;
         clipboard-indicator@tudmotu.com)
-            printf 'Clipboard Indicator — Top-bar clipboard history with search & hotkey' ;;
+            d='Clipboard Indicator — Top-bar clipboard history with search & hotkey' ;;
         compiz-alike-magic-lamp-effect@hermes83.github.com)
-            printf 'Magic Lamp Effect — macOS Genie window minimize animation' ;;
+            d='Magic Lamp Effect — macOS Genie window minimize animation' ;;
         Vitals@CoreCoding.com)
-            printf 'Vitals — Live CPU, RAM, temp, load & network monitor in panel' ;;
+            d='Vitals — Live CPU, RAM, temp, load & network monitor in panel' ;;
         auto-accent-colour@Wartybix)
-            printf 'Auto Accent Colour — Automatically syncs accent color with wallpaper' ;;
+            d='Auto Accent Colour — Automatically syncs accent color with wallpaper' ;;
         ddterm@amezin.github.com)
-            printf 'ddterm — Drop-down terminal toggleable with global hotkey' ;;
+            d='ddterm — Drop-down terminal toggleable with global hotkey' ;;
         kiwimenu@kemma)
-            printf 'Kiwi Menu — macOS-style Applications menu on left of top bar' ;;
+            d='Kiwi Menu — macOS-style Applications menu on left of top bar' ;;
         hotedge@jonathan.jdoda.ca)
-            printf 'Hot Edge — Triggers dock/overview by touching bottom screen edge' ;;
+            d='Hot Edge — Triggers dock/overview by touching bottom screen edge' ;;
         restartto@tiagoporsch.github.io)
-            printf 'Restart To — Adds UEFI/BIOS reboot entries in power menu' ;;
+            d='Restart To — Adds UEFI/BIOS reboot entries in power menu' ;;
         xwayland-indicator@swsnr.de)
-            printf 'XWayland Indicator — Indicator icon for legacy XWayland apps' ;;
+            d='XWayland Indicator — Indicator icon for legacy XWayland apps' ;;
         add-to-steam@pupper.space)
-            printf 'Add to Steam — Shortcut to add non-Steam games/apps to Steam' ;;
+            d='Add to Steam — Shortcut to add non-Steam games/apps to Steam' ;;
         *)
-            printf '%s' "$1" ;;
+            d="$1" ;;
     esac
+    _EXT_DESC="$d"
+    [ "$#" -gt 1 ] || printf '%s' "$d"
 }
 
 preflight() {

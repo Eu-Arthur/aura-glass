@@ -40,8 +40,10 @@ for e in json.load(sys.stdin):
 ')"
 
 for uuid in "${expected[@]}"; do
-    printf '%s\n' "$listed" | grep -qxF "$uuid" \
-        || note "$uuid is installable but aura-glass-ext list does not mention it"
+    case "$listed" in
+        *"$uuid"*) ;;
+        *) note "$uuid is installable but aura-glass-ext list does not mention it" ;;
+    esac
 done
 
 # Nothing listed that the install path cannot reach, which would be a row whose
@@ -76,7 +78,11 @@ while read -r line; do
     [ -n "$line" ] && note "$line"
 done <<< "$desc_problems"
 
-count="$(printf '%s\n' "$listed" | grep -c . || true)"
+readarray -t _listed_lines <<< "$listed"
+count=0
+for _l in "${_listed_lines[@]}"; do
+    [ -n "$_l" ] && count=$((count + 1))
+done
 
 if [ "$problems" -gt 0 ]; then
     printf 'extension catalogue check FAILED — %d problem(s)\n' "$problems"

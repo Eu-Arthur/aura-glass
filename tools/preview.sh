@@ -119,7 +119,8 @@ build_profile() {
     mkdir -p "$extdir"
     for ext in "$HOME/.local/share/gnome-shell/extensions"/*/; do
         [ -d "$ext" ] || continue
-        ln -sfn "${ext%/}" "$extdir/$(basename "$ext")"
+        clean_ext="${ext%/}"
+        ln -sfn "$clean_ext" "$extdir/${clean_ext##*/}"
     done
     cp -a "$REPO_ROOT/tools/preview-driver" "$extdir/$DRIVER_UUID"
 
