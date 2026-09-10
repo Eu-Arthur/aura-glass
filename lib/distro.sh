@@ -147,9 +147,33 @@ ensure_gui_toolkit() {
 # cannot block the whole theme install.
 OPTIONAL_CMDS=(msgfmt xmllint meson ninja)
 
+# Provide a transparent shim for sassc if Dart Sass (sass / dart-sass) is installed.
+# Upstream theme installers specifically invoke `command -v sassc`.
+ensure_sassc_shim() {
+    if ! have sassc; then
+        local alt=""
+        if have sass; then
+            alt="$(command -v sass)"
+        elif have dart-sass; then
+            alt="$(command -v dart-sass)"
+        fi
+        if [ -n "$alt" ]; then
+            mkdir -p "$HOME/.local/bin"
+            ln -sf "$alt" "$HOME/.local/bin/sassc" 2>/dev/null || true
+            export PATH="$HOME/.local/bin:$PATH"
+        fi
+    fi
+}
+
 missing_cmds() {
     local c
     for c in "${REQUIRED_CMDS[@]}"; do
+        if [ "$c" = "sassc" ]; then
+            if have sassc || have sass || have dart-sass; then
+                ensure_sassc_shim
+                continue
+            fi
+        fi
         have "$c" || printf '%s\n' "$c"
     done
 }

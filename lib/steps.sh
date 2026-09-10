@@ -316,6 +316,7 @@ install_theme() {
     if [ "${DRY_RUN:-0}" = 1 ]; then
         info "dry-run: $src/install.sh -d -la"
     else
+        ensure_sassc_shim
         ( cd "$src" && ./install.sh -d -la ) </dev/null \
             || die "the Tahoe theme installer failed"
     fi

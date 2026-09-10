@@ -365,6 +365,7 @@ run rm -f "$HOME/.local/bin/aura-glass-apply" "$HOME/.local/bin/aura-glass-icon-
 # puts it in the overview. The entry has to go with the launcher — one left
 # without the other is a search result that does nothing when clicked.
 run rm -f "$HOME/.local/bin/aura-glass-update-check"
+[ -L "$HOME/.local/bin/sassc" ] && run rm -f "$HOME/.local/bin/sassc"
 run rm -rf "$HOME/.local/share/aura-glass"
 run rm -f "$HOME/.local/share/applications/io.github.DevWebeloper.AuraGlassSettings.desktop"
 run rm -f "$HOME/.local/share/icons/hicolor/scalable/apps/io.github.DevWebeloper.AuraGlassSettings.svg"
