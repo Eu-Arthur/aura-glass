@@ -47,22 +47,27 @@ declare -A PKG_ARCH=(
     [git]=git [curl]=curl [unzip]=unzip [sassc]=sassc
     [gsettings]=glib2 [dconf]=dconf [gnome-extensions]=gnome-shell
     [msgfmt]=gettext [python3]=python [glib-compile-resources]=glib2
-    [xmllint]=libxml2
+    [xmllint]=libxml2 [pillow]=python-pillow [imagemagick]=imagemagick
+    [meson]=meson [ninja]=ninja
 )
 declare -A PKG_FEDORA=(
     [git]=git [curl]=curl [unzip]=unzip [sassc]=sassc
     [gsettings]=glib2 [dconf]=dconf [gnome-extensions]=gnome-shell
     [msgfmt]=gettext [python3]=python3 [glib-compile-resources]=glib2-devel
-    [xmllint]=libxml2
+    [xmllint]=libxml2 [pillow]=python3-pillow [imagemagick]=ImageMagick
+    [meson]=meson [ninja]=ninja-build
 )
 declare -A PKG_DEBIAN=(
     [git]=git [curl]=curl [unzip]=unzip [sassc]=sassc
     [gsettings]=libglib2.0-bin [dconf]=dconf-cli [gnome-extensions]=gnome-shell
     [msgfmt]=gettext [python3]=python3 [glib-compile-resources]=libglib2.0-dev-bin
-    [xmllint]=libxml2-utils
+    [xmllint]=libxml2-utils [pillow]=python3-pil [imagemagick]=imagemagick
+    [meson]=meson [ninja]=ninja-build
 )
 
-REQUIRED_CMDS=(git curl unzip sassc gsettings dconf gnome-extensions python3 glib-compile-resources)
+# glib-compile-resources is deliberately excluded: it is only needed when
+# theming GDM (--gdm) and is checked by install_gdm rather than blocking here.
+REQUIRED_CMDS=(git curl unzip sassc gsettings dconf gnome-extensions python3)
 
 # PyGObject and libadwaita's typelib, for the settings window and the graphical
 # setup wizard. These are imported rather than executed, so `command -v` cannot
@@ -127,17 +132,20 @@ ensure_gui_toolkit() {
     case "$DISTRO_FAMILY" in
         arch)   run sudo pacman -S --needed --noconfirm $pkgs ;;
         fedora) run sudo dnf install -y $pkgs ;;
-        debian) run sudo apt-get install -y $pkgs ;;
+        debian)
+            run sudo apt-get update -qq || true
+            run sudo apt-get install -y $pkgs
+            ;;
     esac
 
     gui_toolkit_present
 }
 
 # Nice to have, never fatal. msgfmt compiles Blur My Shell's translations when
-# it is built from git; without it the extension works and its preferences are
-# simply untranslated. Kept out of REQUIRED_CMDS so a missing gettext cannot
-# block the whole install over a cosmetic loss.
-OPTIONAL_CMDS=(msgfmt xmllint)
+# it is built from git; xmllint validates schemas; meson and ninja compile
+# gnome-rounded-blur. Kept out of REQUIRED_CMDS so a missing optional tool
+# cannot block the whole theme install.
+OPTIONAL_CMDS=(msgfmt xmllint meson ninja)
 
 missing_cmds() {
     local c
@@ -189,6 +197,7 @@ install_deps() {
             local pkgs; pkgs="$(install_hint PKG_DEBIAN "${missing[@]}")"
             info "would run: sudo apt install $pkgs"
             confirm "Install these with apt?" 1 || { warn "skipping — install them yourself, then re-run"; return 1; }
+            run sudo apt-get update -qq || true
             run sudo apt-get install -y $pkgs
             ;;
         *)

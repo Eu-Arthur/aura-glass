@@ -185,6 +185,10 @@ uninstall_gdm_sync_unit() {
     run rm -f "$HOME/.local/bin/aura-glass-gdm-sync" "$HOME/.local/bin/tahoe-glass-gdm-sync"
 }
 
+have_image_processor() {
+    python3 -c 'import PIL' >/dev/null 2>&1 || have magick
+}
+
 install_gdm() {
     step "Installing the GDM Login Screen theme (requires sudo)"
 
@@ -194,7 +198,26 @@ install_gdm() {
     fi
 
     if ! have glib-compile-resources; then
-        warn "glib-compile-resources is required to build the GDM theme"
+        local gcr_pkg
+        case "$DISTRO_FAMILY" in
+            arch)   gcr_pkg="glib2" ;;
+            fedora) gcr_pkg="glib2-devel" ;;
+            debian) gcr_pkg="libglib2.0-dev-bin" ;;
+            *)      gcr_pkg="glib-compile-resources" ;;
+        esac
+        warn "glib-compile-resources is required to build the GDM theme (install $gcr_pkg)"
+        return 1
+    fi
+
+    if ! have_image_processor; then
+        local pil_pkg
+        case "$DISTRO_FAMILY" in
+            arch)   pil_pkg="python-pillow" ;;
+            fedora) pil_pkg="python3-pillow" ;;
+            debian) pil_pkg="python3-pil" ;;
+            *)      pil_pkg="python3-pil" ;;
+        esac
+        warn "Pillow or ImageMagick is required to blur the GDM wallpaper (install $pil_pkg)"
         return 1
     fi
 

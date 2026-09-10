@@ -369,7 +369,14 @@ install_rounded_blur() {
     fi
 
     if [ -z "$helper" ] && ! have meson; then
-        warn "neither an AUR helper (paru/yay) nor meson is installed."
+        local build_pkgs
+        case "$DISTRO_FAMILY" in
+            arch)   build_pkgs="meson ninja" ;;
+            fedora) build_pkgs="meson ninja-build" ;;
+            debian) build_pkgs="meson ninja-build" ;;
+            *)      build_pkgs="meson ninja" ;;
+        esac
+        warn "neither an AUR helper (paru/yay) nor meson is installed (install $build_pkgs)."
         warn "Popup blur still works and its corners are still round — it just"
         warn "samples the wallpaper instead of the window behind it."
         return 0
