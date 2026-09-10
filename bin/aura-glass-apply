@@ -142,51 +142,50 @@ revive "$GTK3_CSS"      "gtk3-gtk.css"
 # FLATTEN=1 also rewrites the theme's own shadow and gradient values to `none`
 # in place. See the note on flattening below; FLATTEN=0 leaves the target's
 # existing content untouched and only appends.
-apply() {
-    local target="$1" flatten="$2"; shift 2
-    [ -f "$target" ] || { echo "skip (missing target): $target"; return; }
-    local present=() s
-    for s in "$@"; do [ -f "$s" ] && present+=("$s"); done
-    [ ${#present[@]} -gt 0 ] || { echo "skip (no snippets): $target"; return; }
-    python3 - "$target" "$flatten" "${present[@]}" <<'PY'
+apply_batch() {
+    local batch_args=()
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --target)
+                local target="$2" flatten="$3"; shift 3
+                if [ ! -f "$target" ]; then
+                    echo "skip (missing target): $target"
+                    while [ $# -gt 0 ] && [ "$1" != "--target" ]; do shift; done
+                    continue
+                fi
+                local present=()
+                while [ $# -gt 0 ] && [ "$1" != "--target" ]; do
+                    [ -f "$1" ] && present+=("$1")
+                    shift
+                done
+                if [ ${#present[@]} -eq 0 ]; then
+                    echo "skip (no snippets): $target"
+                else
+                    batch_args+=(--target "$target" "$flatten" "${present[@]}")
+                fi
+                ;;
+            *) shift ;;
+        esac
+    done
+
+    [ ${#batch_args[@]} -gt 0 ] || return 0
+    python3 - "${batch_args[@]}" <<'PY'
 import sys, re
-target, flatten, snippets = sys.argv[1], sys.argv[2] == "1", sys.argv[3:]
+
 BEGIN = "/* >>> aura-glass BEGIN <<< */"
 END   = "/* >>> aura-glass END <<< */"
 
-css = open(target, encoding="utf-8").read()
-# Drop any block appended previously so re-runs replace instead of stacking.
-# Strip previous project markers so in-place upgrades don't leave multiple copies.
-for name in ("aura-glass", "tahoe-glass", "tahoe-tweaks"):
-    css = re.sub(
-        r"/\* >>> %s BEGIN <<< \*/.*?/\* >>> %s END <<< \*/\n?" % (name, name),
-        "", css, flags=re.S,
-    )
-
-# Flattening rewrites the theme's values rather than trying to out-rank them.
-#
-# The earlier approach appended counter-rules, which meant winning a cascade
-# fight against a sheet that marks 37 of its own shadows !important. That is not
-# winnable with a blanket reset: between two !important declarations specificity
-# still decides, so `.a .b` beats `StWidget`. Mirroring the theme's own
-# selectors back worked but had to be regenerated on every theme bump, and it
-# only ever covered the selectors that existed when it ran.
-#
-# Setting the value to `none` where it is declared sidesteps the cascade
-# completely — there is no rule left to lose to. It is also why the sheets can
-# keep their blanket resets as a cheap safety net for anything this misses:
-# nothing in the theme is !important for these properties afterwards, so a
-# single !important reset now actually wins.
-#
-# Only the three properties the theme is flattened for are touched, so a bad
-# regex cannot silently restyle something unrelated. The pristine file is in
-# $CONF_DIR/backups and uninstall restores it.
-
-# A gradient function, not the word. `url('gradient-bg.svg')` is a real asset —
-# the Alt+Tab selected-item highlight — and a substring match on "gradient"
-# deleted it.
 GRADIENT = re.compile(r"\b(?:repeating-)?(?:linear|radial|conic)-gradient\s*\(")
 COLOR = re.compile(r"rgba?\(([^)]*)\)|#([0-9a-fA-F]{3,8})\b")
+ACCENT_HEX = re.compile(r"#(?:0091ff|3584e4|3484e2|1c6bc7|619fe8)\b", re.I)
+
+snippets_cache = {}
+
+
+def read_snippet(path):
+    if path not in snippets_cache:
+        snippets_cache[path] = open(path, encoding="utf-8").read().rstrip("\n")
+    return snippets_cache[path]
 
 
 def parse_color(m):
@@ -210,15 +209,7 @@ def parse_color(m):
 
 
 def average(value):
-    """The flat equivalent of a gradient: the mean of its colour stops.
-
-    A vertical gradient reads as its midpoint, so this is what replaces it. Its
-    first stop would be truer to the top edge but is often near-opaque, which
-    fights --app-transparency. Returns None if any stop is a form this cannot
-    read (a named colour, an @reference, a nested colour function), because a
-    partial average would be a made-up colour rather than a flat version of
-    this one.
-    """
+    """The flat equivalent of a gradient: the mean of its colour stops."""
     stops = [parse_color(m) for m in COLOR.finditer(value)]
     if not stops or any(s is None for s in stops):
         return None
@@ -237,99 +228,100 @@ def is_transparent(value):
     return c is not None and parse_color(c) is not None and parse_color(c)[3] == 0
 
 
-if flatten:
-    n = [0, 0, 0]
+def process_target(target, flatten, snippets):
+    css = open(target, encoding="utf-8").read()
+    for name in ("aura-glass", "tahoe-glass", "tahoe-tweaks"):
+        css = re.sub(
+            r"/\* >>> %s BEGIN <<< \*/.*?/\* >>> %s END <<< \*/\n?" % (name, name),
+            "", css, flags=re.S,
+        )
 
-    def shadow(m):
-        prop, val = m.group(1), m.group(2)
-        if val.strip() == "none":
-            return m.group(0)
-        n[0] += 1
-        return "%s: none" % prop
+    if flatten:
+        n = [0, 0, 0]
 
-    def body(m):
-        decls = m.group(1)
-        decls = re.sub(r"\b(box-shadow|text-shadow)\s*:\s*([^;}]*)", shadow, decls)
+        def shadow(m):
+            prop, val = m.group(1), m.group(2)
+            if val.strip() == "none":
+                return m.group(0)
+            n[0] += 1
+            return "%s: none" % prop
 
-        img = re.search(r"\bbackground-image\s*:\s*([^;}]*)", decls)
-        if img and GRADIENT.search(img.group(1)):
-            # Where the theme declares no colour, or a transparent one, the
-            # gradient IS the surface — `none` does not flatten it, it deletes
-            # it. That left the Nautilus content pane painting nothing, so the
-            # folder grid's own darker ground showed as a rectangle inside it.
-            # Give those a flat colour; a gradient over a real colour is
-            # decoration and still just goes.
-            colours = re.findall(r"\bbackground-color\s*:\s*([^;}]*)", decls)
-            if not colours or is_transparent(colours[-1]):
-                flat = average(img.group(1))
-                if flat:
-                    n[2] += 1
-                    if colours:
-                        decls = re.sub(
-                            r"\bbackground-color\s*:\s*([^;}]*)",
-                            lambda c: ("background-color: " + flat
-                                       if is_transparent(c.group(1)) else c.group(0)),
-                            decls,
-                        )
-                    else:
-                        decls = decls.replace(
-                            img.group(0), "background-color: %s; %s" % (flat, img.group(0)), 1)
-            n[1] += 1
-            decls = re.sub(r"\bbackground-image\s*:\s*([^;}]*)",
-                           lambda i: ("background-image: none"
-                                      if GRADIENT.search(i.group(1)) else i.group(0)),
-                           decls)
-        return "{%s}" % decls
+        def body(m):
+            decls = m.group(1)
+            decls = re.sub(r"\b(box-shadow|text-shadow)\s*:\s*([^;}]*)", shadow, decls)
 
-    # Per rule body rather than per declaration: whether a gradient is the only
-    # ground can only be decided by looking at the whole rule. `[^{}]*` matches
-    # innermost braces only, so @media and @keyframes wrappers are left alone
-    # and their inner rules are still visited.
-    css = re.sub(r"\{([^{}]*)\}", body, css)
-    print("flattened -> %s (%d shadow%s, %d gradient%s, %d ground%s kept)"
-          % (target, n[0], "" if n[0] == 1 else "s", n[1], "" if n[1] == 1 else "s",
-             n[2], "" if n[2] == 1 else "s"))
+            img = re.search(r"\bbackground-image\s*:\s*([^;}]*)", decls)
+            if img and GRADIENT.search(img.group(1)):
+                colours = re.findall(r"\bbackground-color\s*:\s*([^;}]*)", decls)
+                if not colours or is_transparent(colours[-1]):
+                    flat = average(img.group(1))
+                    if flat:
+                        n[2] += 1
+                        if colours:
+                            decls = re.sub(
+                                r"\bbackground-color\s*:\s*([^;}]*)",
+                                lambda c: ("background-color: " + flat
+                                           if is_transparent(c.group(1)) else c.group(0)),
+                                decls,
+                            )
+                        else:
+                            decls = decls.replace(
+                                img.group(0), "background-color: %s; %s" % (flat, img.group(0)), 1)
+                n[1] += 1
+                decls = re.sub(r"\bbackground-image\s*:\s*([^;}]*)",
+                               lambda i: ("background-image: none"
+                                          if GRADIENT.search(i.group(1)) else i.group(0)),
+                               decls)
+            return "{%s}" % decls
 
-# The theme pins its accent to a handful of hardcoded blues, so it shipped one
-# colour whatever Settings said. Rewriting the hex where it stands is the whole
-# job: `st-lighten(#0091ff, 20%)` becomes `st-lighten(-st-accent-color, 20%)`,
-# which is exactly the form GNOME Shell's own stylesheet writes, and the
-# lighten / darken steps survive.
-#
-# Substituting the enclosing call instead — matching `st-lighten(#0091ff, 20%)`
-# and emitting a bare `-st-accent-color` — is what the first version did, and it
-# flattened rest, hover and pressed to one colour, because those three states
-# differ by nothing but the lighten or darken step it discarded.
-#
-# One @define-color is left alone: the one defining the very name substituted
-# in. A GTK4 theme that pins its accent with `@define-color accent_bg_color
-# #3584e4;` would otherwise be rewritten to `@define-color accent_bg_color
-# @accent_bg_color;`, a definition naming itself. Skipping that line leaves
-# libadwaita's own dynamic definition standing, which is the value wanted here
-# anyway. Any other @define-color holding one of these blues is an ordinary
-# accent use and is rewritten like the rest. St has no @define-color at all, so
-# on the shell side the guard never fires.
-ACCENT_HEX = re.compile(r"#(?:0091ff|3584e4|3484e2|1c6bc7|619fe8)\b", re.I)
-accent = ("-st-accent-color" if "gnome-shell" in target else
-          "@accent_bg_color" if "gtk-4.0" in target else None)
-if accent:
-    selfref = (re.compile(r"^\s*@define-color\s+" + re.escape(accent[1:]) + r"\b")
-               if accent.startswith("@") else None)
-    css = "".join(
-        line if (selfref and selfref.match(line)) else ACCENT_HEX.sub(accent, line)
-        for line in css.splitlines(True)
+        css = re.sub(r"\{([^{}]*)\}", body, css)
+        print("flattened -> %s (%d shadow%s, %d gradient%s, %d ground%s kept)"
+              % (target, n[0], "" if n[0] == 1 else "s", n[1], "" if n[1] == 1 else "s",
+                 n[2], "" if n[2] == 1 else "s"))
+
+    accent = ("-st-accent-color" if "gnome-shell" in target else
+              "@accent_bg_color" if "gtk-4.0" in target else None)
+    if accent:
+        selfref = (re.compile(r"^\s*@define-color\s+" + re.escape(accent[1:]) + r"\b")
+                   if accent.startswith("@") else None)
+        css = "".join(
+            line if (selfref and selfref.match(line)) else ACCENT_HEX.sub(accent, line)
+            for line in css.splitlines(True)
+        )
+
+    block = "\n\n".join(read_snippet(p) for p in snippets)
+    open(target, "w", encoding="utf-8").write(
+        css.rstrip("\n") + "\n\n" + BEGIN + "\n" + block + "\n" + END + "\n"
     )
+    print("applied ->", target, "(%d snippet%s)" % (len(snippets), "" if len(snippets) == 1 else "s"))
 
-# Order is the order given: later sheets are overrides and must win on equal
-# specificity, so they are concatenated rather than merged.
-block = "\n\n".join(
-    open(p, encoding="utf-8").read().rstrip("\n") for p in snippets
-)
-open(target, "w", encoding="utf-8").write(
-    css.rstrip("\n") + "\n\n" + BEGIN + "\n" + block + "\n" + END + "\n"
-)
-print("applied ->", target, "(%d snippet%s)" % (len(snippets), "" if len(snippets) == 1 else "s"))
+
+groups = []
+cur = None
+for arg in sys.argv[1:]:
+    if arg == "--target":
+        if cur:
+            groups.append(cur)
+        cur = []
+    elif cur is not None:
+        cur.append(arg)
+if cur:
+    groups.append(cur)
+
+for g in groups:
+    if len(g) >= 2:
+        process_target(g[0], g[1] == "1", g[2:])
 PY
+}
+
+_APPLY_QUEUE=()
+apply() {
+    _APPLY_QUEUE+=(--target "$@")
+}
+flush_apply() {
+    [ ${#_APPLY_QUEUE[@]} -gt 0 ] || return 0
+    apply_batch "${_APPLY_QUEUE[@]}"
+    _APPLY_QUEUE=()
 }
 
 # Snippet order is the cascade. These sheets override each other on equal
@@ -386,6 +378,7 @@ apply "$GTK3_CSS"      0 "$DIR/gtk3-tweaks.css" \
                          "$DIR/gtk3-window-controls-adwaita.css" \
                          "$DIR/gtk3-window-controls-material.css" \
                          "$DIR/gtk3-window-controls-flat.css"
+flush_apply
 
 # The User Themes extension reloads on a settings change, not on a file change,
 # so toggle the key to force Main.loadTheme().

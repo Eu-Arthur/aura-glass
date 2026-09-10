@@ -70,20 +70,115 @@ if command -v shellcheck >/dev/null 2>&1; then
     run_test "shellcheck-lint" shellcheck -x "$REPO_ROOT/install.sh" "$REPO_ROOT/uninstall.sh" "$REPO_ROOT"/bin/* "$REPO_ROOT"/lib/*.sh
 fi
 
-# 2. Shell test scripts
-printf '\n%s[2/3] Shell Test Suites%s\n' "$C_CYA" "$C_OFF"
-for t in "$TOOLS_DIR"/check-*.sh; do
-    [ "${t##*/}" = "check-all.sh" ] && continue
-    [ -f "$t" ] || continue
-    run_test "${t##*/}" bash "$t"
+# Parse command-line flags
+JOBS="${AURA_GLASS_TEST_JOBS:-1}"
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -j|--parallel|-p)
+            if [ $# -ge 2 ] && [[ "$2" =~ ^[0-9]+$ ]]; then
+                JOBS="$2"; shift 2
+            else
+                JOBS="$(nproc 2>/dev/null || echo 4)"; shift
+            fi
+            ;;
+        -j*|--jobs=*)
+            val="${1#*=}"; [ "$val" = "$1" ] && val="${1#-j}"
+            if [[ "$val" =~ ^[0-9]+$ ]]; then
+                JOBS="$val"
+            else
+                JOBS="$(nproc 2>/dev/null || echo 4)"
+            fi
+            shift
+            ;;
+        --jobs)
+            JOBS="${2:-4}"; shift 2
+            ;;
+        -h|--help)
+            echo "Usage: tools/check-all.sh [-j [N] | --parallel]"
+            exit 0
+            ;;
+        *) shift ;;
+    esac
 done
 
-# 3. Python test suites
-printf '\n%s[3/3] Python Test Suites%s\n' "$C_CYA" "$C_OFF"
-for t in "$TOOLS_DIR"/check-*.py; do
-    [ -f "$t" ] || continue
-    run_test "${t##*/}" python3 "$t"
-done
+if [ "$JOBS" -gt 1 ]; then
+    TMP_LOGS="$(mktemp -d)"
+    trap 'kill $(jobs -p) 2>/dev/null || true; rm -rf "$TMP_LOGS"' EXIT INT TERM
+
+    queue_label=()
+    queue_section=()
+    queue_exe=()
+    queue_file=()
+
+    for t in "$TOOLS_DIR"/check-*.sh; do
+        [ "${t##*/}" = "check-all.sh" ] && continue
+        [ -f "$t" ] || continue
+        queue_label+=("${t##*/}")
+        queue_section+=("shell")
+        queue_exe+=("bash")
+        queue_file+=("$t")
+    done
+    for t in "$TOOLS_DIR"/check-*.py; do
+        [ -f "$t" ] || continue
+        queue_label+=("${t##*/}")
+        queue_section+=("python")
+        queue_exe+=("python3")
+        queue_file+=("$t")
+    done
+
+    # Spawn jobs with limit $JOBS
+    pids=()
+    for i in "${!queue_label[@]}"; do
+        log="$TMP_LOGS/$i.log"
+        rc_f="$TMP_LOGS/$i.rc"
+        exe="${queue_exe[$i]}"
+        f="${queue_file[$i]}"
+        ( "$exe" "$f" > "$log" 2>&1; echo $? > "$rc_f" ) &
+        pids+=($!)
+        while [ "$(jobs -rp | wc -l)" -ge "$JOBS" ]; do
+            sleep 0.05
+        done
+    done
+
+    printf '\n%s[2/3] Shell Test Suites (running with %d jobs)%s\n' "$C_CYA" "$JOBS" "$C_OFF"
+    shown_py=0
+    for i in "${!queue_label[@]}"; do
+        if [ "${queue_section[$i]}" = "python" ] && [ "$shown_py" = 0 ]; then
+            printf '\n%s[3/3] Python Test Suites%s\n' "$C_CYA" "$C_OFF"
+            shown_py=1
+        fi
+        wait "${pids[$i]}" 2>/dev/null || true
+        rc=1
+        [ -f "$TMP_LOGS/$i.rc" ] && rc="$(cat "$TMP_LOGS/$i.rc")"
+        total=$((total + 1))
+        printf '  %-35s ' "${queue_label[$i]}..."
+        if [ "$rc" -eq 0 ]; then
+            passed=$((passed + 1))
+            printf '%s[ PASS ]%s\n' "$C_GRN" "$C_OFF"
+        else
+            failed=$((failed + 1))
+            printf '%s[ FAIL ]%s (exit %s)\n' "$C_RED" "$C_OFF" "$rc"
+            if [ -s "$TMP_LOGS/$i.log" ]; then
+                sed 's/^/    /' "$TMP_LOGS/$i.log"
+            fi
+        fi
+    done
+else
+    # 2. Shell test scripts
+    printf '\n%s[2/3] Shell Test Suites%s\n' "$C_CYA" "$C_OFF"
+    for t in "$TOOLS_DIR"/check-*.sh; do
+        [ "${t##*/}" = "check-all.sh" ] && continue
+        [ -f "$t" ] || continue
+        run_test "${t##*/}" bash "$t"
+    done
+
+    # 3. Python test suites
+    printf '\n%s[3/3] Python Test Suites%s\n' "$C_CYA" "$C_OFF"
+    for t in "$TOOLS_DIR"/check-*.py; do
+        [ -f "$t" ] || continue
+        run_test "${t##*/}" python3 "$t"
+    done
+fi
 
 end_time=$(date +%s)
 duration=$((end_time - start_time))
