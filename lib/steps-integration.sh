@@ -140,3 +140,12 @@ install_panel_blur_unit() {
     fi
     ok "panel blur rebuilds on every monitor change, and once at login"
 }
+
+install_completions() {
+    local comp_dir="$HOME/.local/share/bash-completion/completions"
+    run mkdir -p "$comp_dir"
+    run install -Dm644 "$REPO_ROOT/completions/aura-glass.bash" "$comp_dir/aura-glass"
+    run ln -sf "aura-glass" "$comp_dir/install.sh" 2>/dev/null || true
+    run ln -sf "aura-glass" "$comp_dir/uninstall.sh" 2>/dev/null || true
+    ok "shell autocompletion installed (~/.local/share/bash-completion/completions/aura-glass)"
+}

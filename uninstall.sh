@@ -368,6 +368,9 @@ run rm -f "$HOME/.local/bin/aura-glass-update-check"
 run rm -rf "$HOME/.local/share/aura-glass"
 run rm -f "$HOME/.local/share/applications/io.github.DevWebeloper.AuraGlassSettings.desktop"
 run rm -f "$HOME/.local/share/icons/hicolor/scalable/apps/io.github.DevWebeloper.AuraGlassSettings.svg"
+run rm -f "$HOME/.local/share/bash-completion/completions/aura-glass" \
+          "$HOME/.local/share/bash-completion/completions/install.sh" \
+          "$HOME/.local/share/bash-completion/completions/uninstall.sh"
 # The open-once autostart entry, if an install armed it and no login has spent
 # it yet. Left behind it would open a window that is no longer installed, on
 # every login, forever — the entry only deletes itself when it manages to run.

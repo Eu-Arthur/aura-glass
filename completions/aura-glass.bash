@@ -1,0 +1,86 @@
+# shellcheck shell=bash
+# bash/zsh completion for aura-glass scripts and commands
+
+if [ -n "${ZSH_VERSION:-}" ]; then
+    autoload -U +X bashcompinit 2>/dev/null && bashcompinit
+fi
+
+_aura_glass_install() {
+    local cur prev opts
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    case "$prev" in
+        --accent)
+            COMPREPLY=( $(compgen -W "purple blue teal green yellow orange red pink graphite" -- "$cur") )
+            return 0
+            ;;
+        --glass-mode|--blur-mode)
+            COMPREPLY=( $(compgen -W "frosted fluid solid" -- "$cur") )
+            return 0
+            ;;
+        --radius-preset)
+            COMPREPLY=( $(compgen -W "none sharp small default medium round full" -- "$cur") )
+            return 0
+            ;;
+        --font)
+            COMPREPLY=( $(compgen -W "system inter misans sf-pro" -- "$cur") )
+            return 0
+            ;;
+        --icons)
+            COMPREPLY=( $(compgen -W "colloid reversal mactahoe keep original" -- "$cur") )
+            return 0
+            ;;
+        --cursors)
+            COMPREPLY=( $(compgen -W "aosp mactahoe keep original" -- "$cur") )
+            return 0
+            ;;
+        --app-transparency|--panel-transparency)
+            COMPREPLY=( $(compgen -W "0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0" -- "$cur") )
+            return 0
+            ;;
+    esac
+
+    opts="--full --extras --no-extras --accent --glass-mode --blur-mode --radius-preset \
+          --font --icons --cursors --blur --no-blur --popup-blur --no-popup-blur \
+          --static-popup-blur --notification-blur --no-notification-blur \
+          --app-transparency --panel-transparency --gdm --no-gdm --gdm-monitors \
+          --reinstall --update --dry-run -n --interactive -y --yes --help -h \
+          --settings-only --styling-off --styling-on"
+
+    if [[ "$cur" == -* ]]; then
+        COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
+        return 0
+    fi
+}
+
+_aura_glass_uninstall() {
+    local cur prev opts
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    opts="--all --full --extensions --assets --gdm --gdm-monitors \
+          --interactive -y --yes -n --dry-run -h --help"
+
+    if [[ "$cur" == -* ]]; then
+        COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
+        return 0
+    fi
+}
+
+_aura_glass_update_check() {
+    local cur opts
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    opts="--notify -h --help"
+    if [[ "$cur" == -* ]]; then
+        COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
+        return 0
+    fi
+}
+
+complete -F _aura_glass_install install.sh ./install.sh
+complete -F _aura_glass_uninstall uninstall.sh ./uninstall.sh
+complete -F _aura_glass_update_check aura-glass-update-check

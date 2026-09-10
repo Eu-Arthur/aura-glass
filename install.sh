@@ -1394,6 +1394,7 @@ install_update_check
 flatpak_override
 install_panel_blur_unit
 enable_extensions
+install_completions
 if [ "$WANT_GDM_MONITORS" = 1 ]; then
     sync_gdm_monitors
     [ "$WANT_GDM" != 1 ] && install_gdm_sync_unit
