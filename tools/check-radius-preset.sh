@@ -45,6 +45,12 @@ sys.path.insert(0, os.path.join(ROOT, "tools"))
 from token_manifest import RADIUS_TOKENS, css_entries  # noqa: E402
 
 WRITER = os.path.join(ROOT, "tools", "apply-radius-preset.py")
+import importlib.util
+_spec = importlib.util.spec_from_file_location("apply_radius_preset", WRITER)
+_mod = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_mod)
+apply_preset = _mod.apply_preset
+
 RADIUS_CSS = css_entries(set(RADIUS_TOKENS))
 SHEETS = sorted({rel for _, _, rel, _ in RADIUS_CSS})
 
@@ -68,11 +74,10 @@ def stage(tmp):
 
 
 def apply(tmp, values):
-    res = subprocess.run([sys.executable, WRITER, tmp] + list(values),
-                         capture_output=True, text=True)
-    if res.returncode != 0:
-        failures.append("writer exited %d for %s:\n    %s"
-                        % (res.returncode, values, res.stderr.strip()))
+    rc, msg = apply_preset(tmp, list(values))
+    if rc != 0:
+        failures.append("writer failed (%d) for %s:\n    %s"
+                        % (rc, values, msg.strip()))
         return False
     return True
 

@@ -419,6 +419,7 @@ parse_flags() {
         --force)         FORCE=1; EXPLICIT_FLAGS=1; shift ;;
         -y|--yes)        ASSUME_YES=1; EXPLICIT_FLAGS=1; shift ;;
         -n|--dry-run)    DRY_RUN=1; EXPLICIT_FLAGS=1; shift ;;
+        --resolve-only)  RESOLVE_ONLY=1; DRY_RUN=1; EXPLICIT_FLAGS=1; shift ;;
         --doctor)        shift; exec "$REPO_ROOT/bin/aura-glass-doctor" "$@" ;;
         -h|--help)       usage; exit 0 ;;
         *)               usage; die "unknown option: $1" ;;
@@ -1151,7 +1152,19 @@ else
 fi
 
 if [ -n "$APP_TRANSPARENCY" ]; then
-    norm_res="$(python3 - "${APP_TRANSPARENCY:-0}" "${APP_OPACITY:-}" <<'PY'
+    case "${APP_TRANSPARENCY}_${APP_OPACITY:-}" in
+        0_|0.0_|0%_|off_|none_|no_)
+            APP_TRANSPARENCY="0"; APP_OPACITY="255" ;;
+        0.82_210|0.82_)
+            APP_TRANSPARENCY="0.82"; APP_OPACITY="210" ;;
+        0.90_230|0.9_230|0.90_|0.9_)
+            APP_TRANSPARENCY="0.90"; APP_OPACITY="230" ;;
+        0.95_242|0.95_)
+            APP_TRANSPARENCY="0.95"; APP_OPACITY="242" ;;
+        1_255|1.0_255|1.00_255|1_|1.0_|1.00_)
+            APP_TRANSPARENCY="1.00"; APP_OPACITY="255" ;;
+        *)
+            norm_res="$(python3 - "${APP_TRANSPARENCY:-0}" "${APP_OPACITY:-}" <<'PY'
 import sys
 raw_t = sys.argv[1].strip() if len(sys.argv) > 1 else "0"
 raw_o = sys.argv[2].strip() if len(sys.argv) > 2 else ""
@@ -1200,11 +1213,25 @@ if frac > 1.00:
 print(f"{frac:.2f}\n{op}")
 PY
 )"
-    APP_TRANSPARENCY="${norm_res%%$'\n'*}"
-    APP_OPACITY="${norm_res##*$'\n'}"
+            APP_TRANSPARENCY="${norm_res%%$'\n'*}"
+            APP_OPACITY="${norm_res##*$'\n'}"
+            ;;
+    esac
 fi
 APP_TRANSPARENCY="${APP_TRANSPARENCY:-0}"
 APP_OPACITY="${APP_OPACITY:-255}"
+
+# --no-blur does not install Blur My Shell at all, so asking it to blur behind
+# windows cannot be honoured. Rejected rather than silently resolved either way:
+# whichever of the two we picked would be the opposite of what half the users
+# writing that line meant, and apply_app_blur would otherwise write a dconf key
+# for an extension this mode deliberately leaves out.
+if [ "$WANT_BLUR" != 1 ] && [ "$WANT_WINDOW_BLUR" = 1 ]; then
+    if [ "${GLASS_MODE:-}" = solid ]; then
+        die "--glass-mode solid and --window-blur contradict each other — solid mode stands the theme down entirely, so there is no blur to put behind a window. Pick one."
+    fi
+    die "--no-blur and --window-blur contradict each other — --no-blur leaves Blur My Shell out entirely, so there is nothing to blur behind a window. Pick one."
+fi
 
 # The one line tools/check-glass-modes.sh reads. Printed on every dry run rather
 # than behind a flag of its own: the resolution is the whole of what a mode is,
@@ -1214,6 +1241,9 @@ if [ "$DRY_RUN" = 1 ]; then
     printf '  glass-mode: %s blur=%s window=%s popup=%s transparency=%s styling=%s\n' \
         "$(glass_mode_from_state)" "$WANT_BLUR" "$WANT_WINDOW_BLUR" \
         "$WANT_POPUP_BLUR" "$APP_TRANSPARENCY" "$WANT_STYLING"
+    if [ "${RESOLVE_ONLY:-0}" = 1 ]; then
+        exit 0
+    fi
 fi
 
 # Colloid is named in accent terms rather than in its own: it calls blue
@@ -1246,18 +1276,6 @@ case " $VALID_ACCENTS " in
     *" $ACCENT "*) ;;
     *) die "unknown accent '$ACCENT' — pick one of: $VALID_ACCENTS" ;;
 esac
-
-# --no-blur does not install Blur My Shell at all, so asking it to blur behind
-# windows cannot be honoured. Rejected rather than silently resolved either way:
-# whichever of the two we picked would be the opposite of what half the users
-# writing that line meant, and apply_app_blur would otherwise write a dconf key
-# for an extension this mode deliberately leaves out.
-if [ "$WANT_BLUR" != 1 ] && [ "$WANT_WINDOW_BLUR" = 1 ]; then
-    if [ "${GLASS_MODE:-}" = solid ]; then
-        die "--glass-mode solid and --window-blur contradict each other — solid mode stands the theme down entirely, so there is no blur to put behind a window. Pick one."
-    fi
-    die "--no-blur and --window-blur contradict each other — --no-blur leaves Blur My Shell out entirely, so there is nothing to blur behind a window. Pick one."
-fi
 
 printf '\n%s  aura-glass%s  %saccent %s%s\n' \
     "$C_BLD" "$C_OFF" "$C_DIM" "$ACCENT" "$C_OFF"

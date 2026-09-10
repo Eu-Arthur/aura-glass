@@ -43,8 +43,11 @@ case "$1" in
         ;;
     disable)
         echo "disable:$2" >> "$FAKE_LOG"
-        grep -vxF "$2" "$FAKE_ENABLED" > "$FAKE_ENABLED.tmp" 2>/dev/null || : > "$FAKE_ENABLED.tmp"
-        mv "$FAKE_ENABLED.tmp" "$FAKE_ENABLED"
+        out=""
+        while IFS= read -r line; do
+            [ "$line" = "$2" ] || out="$out$line"$'\n'
+        done < "$FAKE_ENABLED"
+        printf '%s' "$out" > "$FAKE_ENABLED"
         ;;
     enable)
         echo "enable:$2" >> "$FAKE_LOG"

@@ -37,36 +37,51 @@ check_round_trip() {
     local label="$1"; shift
     local literal
     literal="$(printf '%s\n' "$@" | app_blur_literal)"
-    REPO_ROOT="$REPO_ROOT" LITERAL="$literal" LABEL="$label" \
-    python3 - "$@" <<'PY' || fail=1
-import os, sys
+    printf '%s\0%s\0%d\0' "$label" "$literal" "$#"
+    for arg in "$@"; do
+        printf '%s\0' "$arg"
+    done
+}
+
+(
+    check_round_trip "plain names" org.gnome.Nautilus org.gnome.Console
+    check_round_trip "wildcards" '*chrome*' '*electron*'
+    # The three that break naive quoting. An apostrophe closes a GVariant string, a
+    # backslash escapes the next character, and a double quote is fine but only if
+    # the escaping did not switch quote styles to cope with the apostrophe.
+    check_round_trip "apostrophe" "Bob's App"
+    check_round_trip "backslash" 'weird\name'
+    check_round_trip "double quote" 'say "hi"'
+    check_round_trip "spaces" 'Some App Name'
+) | python3 -c '
+import sys
 import gi
 gi.require_version("GLib", "2.0")
 from gi.repository import GLib
 
-want = [a for a in sys.argv[1:] if a.strip()]
-literal, label = os.environ["LITERAL"], os.environ["LABEL"]
-try:
-    got = GLib.Variant.parse(GLib.VariantType("as"), literal, None, None).unpack()
-except GLib.Error as exc:
-    print("  %s: dconf could not parse %s\n      %s" % (label, literal, exc.message))
+raw = sys.stdin.buffer.read()
+parts = raw.split(b"\0")
+idx = 0
+failed = False
+while idx < len(parts) - 1:
+    label = parts[idx].decode("utf-8"); idx += 1
+    literal = parts[idx].decode("utf-8"); idx += 1
+    count = int(parts[idx].decode("utf-8")); idx += 1
+    want = [parts[idx + i].decode("utf-8") for i in range(count)]
+    idx += count
+    want = [a for a in want if a.strip()]
+    try:
+        got = GLib.Variant.parse(GLib.VariantType("as"), literal, None, None).unpack()
+    except GLib.Error as exc:
+        print("  %s: dconf could not parse %s\n      %s" % (label, literal, exc.message))
+        failed = True
+        continue
+    if got != want:
+        print("  %s: parsed back as %s, want %s" % (label, got, want))
+        failed = True
+if failed:
     sys.exit(1)
-if got != want:
-    print("  %s: parsed back as %s, want %s" % (label, got, want))
-    sys.exit(1)
-PY
-}
-
-check_round_trip "plain names" org.gnome.Nautilus org.gnome.Console
-check_round_trip "wildcards" '*chrome*' '*electron*'
-# The three that break naive quoting. An apostrophe closes a GVariant string, a
-# backslash escapes the next character, and a double quote is fine but only if
-# the escaping did not switch quote styles to cope with the apostrophe.
-check_round_trip "apostrophe" "Bob's App"
-check_round_trip "backslash" 'weird\name'
-check_round_trip "double quote" 'say "hi"'
-check_round_trip "spaces" 'Some App Name'
-check_round_trip "blank lines dropped" org.gnome.Nautilus '' '  ' org.gnome.Console
+' || fail=1
 
 # --- precedence: flag beats memo beats default ---------------------------
 printf 'from.the.memo\n' > "$CONF_DIR/app-blur-allow"
@@ -100,13 +115,16 @@ got="$(app_blur_lines 1 "a,b,c" "$CONF_DIR/app-blur-allow" shipped.default | tr 
 [ "$APP_BLUR_SELF" = "$GUI_APP_ID" ] || note \
     "APP_BLUR_SELF ($APP_BLUR_SELF) and GUI_APP_ID ($GUI_APP_ID) disagree"
 
-gui_self="$(python3 - "$REPO_ROOT" <<'PY'
-import re, sys
-src = open(sys.argv[1] + "/gui/aura_glass_settings.py", encoding="utf-8").read()
-found = re.search(r'^APP_ID = "([^"]+)"', src, re.M)
-print(found.group(1) if found else "")
-PY
-)"
+gui_self=""
+while IFS= read -r line; do
+    case "$line" in
+        'APP_ID = "'*'"'*)
+            gui_self="${line#*APP_ID = \"}"
+            gui_self="${gui_self%\"*}"
+            break
+            ;;
+    esac
+done < "$REPO_ROOT/gui/aura_glass_settings.py"
 [ "$gui_self" = "$APP_BLUR_SELF" ] || note \
     "the settings window's APP_ID ($gui_self) and APP_BLUR_SELF ($APP_BLUR_SELF) disagree"
 

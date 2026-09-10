@@ -641,16 +641,20 @@ stand_down_extensions() {
         return 0
     fi
 
-    while IFS= read -r u; do
+    for u in "${EXT_CORE[@]}" openbar@neuromorph "$BMS_UUID" \
+             custom-osd@neuromorph "${EXT_EXTRA_ALL[@]}"; do
         [ -n "$u" ] || continue
         # Whole-line match against the enabled list, not a substring search —
         # a UUID that merely contains another must never be treated as enabled.
-        grep -qxF "$u" <<< "$enabled" || continue
+        case $'\n'"$enabled"$'\n' in
+            *$'\n'"$u"$'\n'*) ;;
+            *) continue ;;
+        esac
 
         disabled_now+=("$u")
         run gnome-extensions disable "$u" 2>/dev/null \
             || warn "could not switch $u off — it is still written down, so the way back still tries it"
-    done < <(glass_owned_extensions)
+    done
 
     # Nothing of ours was on. On a second solid entry this is the normal case
     # — everything is already off from last time — so any record an earlier
@@ -703,7 +707,9 @@ restore_extensions() {
     # means something upstream went wrong, not that nothing was ever switched
     # off. Deleting it would erase the one clue that happened, so it is left
     # alone instead of being silently swept away as a no-op.
-    if ! grep -qE '[^[:space:]]' "$record"; then
+    local record_content
+    record_content="$(read_memo "$record")"
+    if [ -z "${record_content//[[:space:]]/}" ]; then
         warn "$record exists but names nothing — left alone rather than guessed at"
         return 0
     fi

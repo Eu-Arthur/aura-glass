@@ -35,20 +35,14 @@ from token_manifest import OPTIONAL_SHEETS, RADIUS_TOKENS, css_entries  # noqa: 
 import re  # noqa: E402
 
 
-def main():
-    if len(sys.argv) != 2 + len(RADIUS_TOKENS):
-        print("usage: apply-radius-preset.py CONF_DIR %s"
-              % " ".join(t.replace("TOKEN_RADIUS_", "") for t in RADIUS_TOKENS),
-              file=sys.stderr)
-        return 2
+def apply_preset(conf_dir, values_list):
+    if len(values_list) != len(RADIUS_TOKENS):
+        return 2, "usage: apply-radius-preset.py CONF_DIR %s" % " ".join(t.replace("TOKEN_RADIUS_", "") for t in RADIUS_TOKENS)
 
-    conf_dir = sys.argv[1]
-    values = dict(zip(RADIUS_TOKENS, sys.argv[2:]))
+    values = dict(zip(RADIUS_TOKENS, values_list))
     for token, value in values.items():
         if not re.fullmatch(r"\d+", value):
-            print("apply-radius-preset: %s is %r, want a whole number of pixels"
-                  % (token, value), file=sys.stderr)
-            return 2
+            return 2, "%s is %r, want a whole number of pixels" % (token, value)
 
     entries = css_entries(set(RADIUS_TOKENS))
     problems = []
@@ -108,17 +102,29 @@ def main():
         open(path, "w", encoding="utf-8").write(text)
 
     if problems:
-        print("apply-radius-preset FAILED\n", file=sys.stderr)
-        for p in problems:
-            print("  " + p, file=sys.stderr)
-        return 1
+        return 1, "apply-radius-preset FAILED\n  " + "\n  ".join(problems)
 
     written = len(by_sheet) - len(skipped)
-    print("radii rewritten in %s — %d value%s in %d sheet%s%s"
-          % (conf_dir, edits, "" if edits == 1 else "s",
-             written, "" if written == 1 else "s",
-             " (%s not installed)" % ", ".join(sorted(skipped)) if skipped else ""))
-    return 0
+    msg = ("radii rewritten in %s — %d value%s in %d sheet%s%s"
+           % (conf_dir, edits, "" if edits == 1 else "s",
+              written, "" if written == 1 else "s",
+              " (%s not installed)" % ", ".join(sorted(skipped)) if skipped else ""))
+    return 0, msg
+
+
+def main():
+    if len(sys.argv) != 2 + len(RADIUS_TOKENS):
+        print("usage: apply-radius-preset.py CONF_DIR %s"
+              % " ".join(t.replace("TOKEN_RADIUS_", "") for t in RADIUS_TOKENS),
+              file=sys.stderr)
+        return 2
+
+    rc, msg = apply_preset(sys.argv[1], sys.argv[2:])
+    if rc != 0:
+        print(msg, file=sys.stderr)
+    else:
+        print(msg)
+    return rc
 
 
 if __name__ == "__main__":

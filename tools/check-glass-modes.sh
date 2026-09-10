@@ -30,8 +30,17 @@ in_scratch() {   # in_scratch FLAG...
 # The resolved state is not printed by install.sh, so ask it for the one thing
 # that is: a debug line the resolution writes under --dry-run.
 resolved() {   # resolved FLAG...
-    in_scratch "$@" 2>&1 \
-        | sed -n 's/^ *glass-mode: //p' | tail -n 1
+    local line out
+    out="$(in_scratch --resolve-only "$@" 2>&1)"
+    while IFS= read -r line; do
+        case "$line" in
+            *"glass-mode: "*)
+                line="${line#*glass-mode: }"
+                printf '%s\n' "$line"
+                return 0
+                ;;
+        esac
+    done <<< "$out"
 }
 
 want() {       # want "description" "expected" FLAG...
@@ -68,23 +77,23 @@ want "solid accepts an explicit --app-transparency already spelled off (off)" \
      "solid blur=0 window=0 popup=0 transparency=0 styling=0" \
      --glass-mode solid --app-transparency off
 
-if in_scratch --glass-mode solid --window-blur >/dev/null 2>&1; then
+if in_scratch --resolve-only --glass-mode solid --window-blur >/dev/null 2>&1; then
     failures+=("--glass-mode solid --window-blur was accepted, it must be refused")
 fi
 
-if in_scratch --glass-mode solid --blur >/dev/null 2>&1; then
+if in_scratch --resolve-only --glass-mode solid --blur >/dev/null 2>&1; then
     failures+=("--glass-mode solid --blur was accepted, it must be refused")
 fi
 
-if in_scratch --glass-mode solid --popup-blur >/dev/null 2>&1; then
+if in_scratch --resolve-only --glass-mode solid --popup-blur >/dev/null 2>&1; then
     failures+=("--glass-mode solid --popup-blur was accepted, it must be refused")
 fi
 
-if in_scratch --glass-mode solid --app-transparency 0.85 >/dev/null 2>&1; then
+if in_scratch --resolve-only --glass-mode solid --app-transparency 0.85 >/dev/null 2>&1; then
     failures+=("--glass-mode solid --app-transparency 0.85 was accepted, it must be refused")
 fi
 
-if in_scratch --glass-mode frostd >/dev/null 2>&1; then
+if in_scratch --resolve-only --glass-mode frostd >/dev/null 2>&1; then
     failures+=("a misspelled --glass-mode was accepted")
 fi
 
@@ -101,7 +110,7 @@ printf 'all\n'      > "$scratch/.config/aura-glass/app-blur-scope"
 printf '0\n'        > "$scratch/.config/aura-glass/popup-blur"
 printf '150\n'      > "$scratch/.config/aura-glass/blur-strength"
 
-in_scratch --glass-mode frosted >/dev/null 2>&1
+in_scratch --resolve-only --glass-mode frosted >/dev/null 2>&1
 seeded="$(cat "$scratch/.config/aura-glass/modes/frosted/app-transparency" 2>/dev/null || true)"
 [ "$seeded" = "0.88" ] || failures+=(
     "seeding frosted should take the level already on disk, got '$seeded'")
@@ -118,7 +127,7 @@ seeded="$(cat "$scratch/.config/aura-glass/modes/frosted/blur-strength" 2>/dev/n
 [ "$seeded" = "150" ] || failures+=(
     "seeding frosted should take the blur strength already on disk, got '$seeded'")
 
-in_scratch --glass-mode transparent >/dev/null 2>&1
+in_scratch --resolve-only --glass-mode transparent >/dev/null 2>&1
 seeded="$(cat "$scratch/.config/aura-glass/modes/transparent/app-transparency" 2>/dev/null || true)"
 [ "$seeded" = "0.82" ] || failures+=(
     "seeding transparent should give it its own darker level, got '$seeded'")
@@ -196,7 +205,6 @@ esac
 
 # Solid also stands the extensions down, and the way back is silent on any
 # other mode — restore_extensions returns immediately with no record on disk.
-out="$(in_scratch --glass-mode solid)"
 case "$out" in
     *"Standing the extensions down"*) ;;
     *) failures+=("solid should stand the extensions down, the run never mentions it") ;;
@@ -206,8 +214,7 @@ case "$out" in
         failures+=("solid must not reset any extension's settings") ;;
 esac
 
-out="$(in_scratch --glass-mode frosted)"
-case "$out" in
+case "$raw" in
     *"Standing the extensions down"*)
         failures+=("frosted should never stand the extensions down") ;;
 esac

@@ -75,6 +75,7 @@ the apply log and the confirmations have as much reason to be dragged off as
 the tint picker does.
 """
 import fnmatch
+import functools
 import glob
 import json
 import math
@@ -690,6 +691,7 @@ def human_size(count):
         count /= 1024.0
 
 
+@functools.lru_cache(maxsize=128)
 def distro_answer(repo, snippet):
     """Ask lib/distro.sh one question, on one line, or None.
 
@@ -912,12 +914,17 @@ def read_cursor_size():
     raw = read_memo("cursor-size", "")
     if not raw:
         try:
-            raw = subprocess.run(
-                ["gsettings", "get", "org.gnome.desktop.interface",
-                 "cursor-size"],
-                capture_output=True, text=True, timeout=2).stdout.strip()
-        except (OSError, subprocess.SubprocessError):
-            raw = ""
+            settings = Gio.Settings.new("org.gnome.desktop.interface")
+            value = settings.get_int("cursor-size")
+            return max(CURSOR_SIZE_MIN, min(CURSOR_SIZE_MAX, value))
+        except Exception:
+            try:
+                raw = subprocess.run(
+                    ["gsettings", "get", "org.gnome.desktop.interface",
+                     "cursor-size"],
+                    capture_output=True, text=True, timeout=2).stdout.strip()
+            except (OSError, subprocess.SubprocessError):
+                raw = ""
     try:
         value = int(raw)
     except ValueError:
@@ -1711,6 +1718,7 @@ def find_repo():
     return None
 
 
+@functools.lru_cache(maxsize=16)
 def shipped_app_blur_defaults(repo):
     """APP_BLUR_ALLOW_DEFAULT / APP_BLUR_BLOCK_DEFAULT from lib/steps-dconf.sh.
 
