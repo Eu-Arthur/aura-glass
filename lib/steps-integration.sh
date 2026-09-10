@@ -147,5 +147,7 @@ install_completions() {
     run install -Dm644 "$REPO_ROOT/completions/aura-glass.bash" "$comp_dir/aura-glass"
     run ln -sf "aura-glass" "$comp_dir/install.sh" 2>/dev/null || true
     run ln -sf "aura-glass" "$comp_dir/uninstall.sh" 2>/dev/null || true
+    run ln -sf "aura-glass" "$comp_dir/aura-glass-apply" 2>/dev/null || true
+    run ln -sf "aura-glass" "$comp_dir/aura-glass-ext" 2>/dev/null || true
     ok "shell autocompletion installed (~/.local/share/bash-completion/completions/aura-glass)"
 }

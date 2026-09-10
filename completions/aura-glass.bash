@@ -81,6 +81,36 @@ _aura_glass_update_check() {
     fi
 }
 
-complete -F _aura_glass_install install.sh ./install.sh
+_aura_glass_ext() {
+    local cur prev subcmds uuids
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    subcmds="list install remove enable disable recommended full -h --help"
+    uuids="user-theme@gnome-shell-extensions.gcampax.github.com \
+           openbar@neuromorph blur-my-shell@aunetx custom-osd@neuromorph \
+           just-perfection-desktop@just-perfection gnome-ui-tune@itstime.tech \
+           space-bar@luchrioh appindicatorsupport@rgcjonas.gmail.com \
+           clipboard-indicator@tudmotu.com compiz-alike-magic-lamp-effect@hermes83.github.com \
+           Vitals@CoreCoding.com auto-accent-colour@Wartybix ddterm@amezin.github.com \
+           kiwimenu@kemma hotedge@jonathan.jdoda.ca restartto@tiagoporsch.github.io \
+           xwayland-indicator@swsnr.de add-to-steam@pupper.space"
+
+    case "$prev" in
+        install|remove|enable|disable)
+            COMPREPLY=( $(compgen -W "$uuids" -- "$cur") )
+            return 0
+            ;;
+    esac
+
+    if [ "$COMP_CWORD" -eq 1 ]; then
+        COMPREPLY=( $(compgen -W "$subcmds" -- "$cur") )
+        return 0
+    fi
+}
+
+complete -F _aura_glass_install install.sh ./install.sh aura-glass-apply ./bin/aura-glass-apply bin/aura-glass-apply
 complete -F _aura_glass_uninstall uninstall.sh ./uninstall.sh
-complete -F _aura_glass_update_check aura-glass-update-check
+complete -F _aura_glass_update_check aura-glass-update-check ./bin/aura-glass-update-check bin/aura-glass-update-check
+complete -F _aura_glass_ext aura-glass-ext ./bin/aura-glass-ext bin/aura-glass-ext

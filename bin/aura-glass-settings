@@ -9,7 +9,15 @@
 # to run a checkout's copy against an installed theme while working on it.
 set -euo pipefail
 
-GUI_DIR="${AURA_GLASS_GUI:-$HOME/.local/share/aura-glass/gui}"
+if [ -n "${AURA_GLASS_GUI:-}" ]; then
+    GUI_DIR="$AURA_GLASS_GUI"
+elif [ -f "$HOME/.local/share/aura-glass/gui/aura_glass_settings.py" ]; then
+    GUI_DIR="$HOME/.local/share/aura-glass/gui"
+elif [ -f "$(dirname "${BASH_SOURCE[0]}")/../gui/aura_glass_settings.py" ]; then
+    GUI_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../gui" && pwd)"
+else
+    GUI_DIR="$HOME/.local/share/aura-glass/gui"
+fi
 APP="$GUI_DIR/aura_glass_settings.py"
 
 if [ ! -f "$APP" ]; then

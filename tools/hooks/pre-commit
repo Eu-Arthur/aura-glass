@@ -52,7 +52,7 @@ syntax_shell() {
     while IFS= read -r f; do
         bash -n "$f" || rc=1
     done < <(find "$TMP" -type f \
-                  \( -name '*.sh' -o -path "$TMP/bin/*" -o -path "$TMP/tools/hooks/*" \))
+                  \( -name '*.sh' -o -name '*.bash' -o -path "$TMP/bin/*" -o -path "$TMP/tools/hooks/*" \))
     return "$rc"
 }
 step "shell syntax" syntax_shell

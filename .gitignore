@@ -4,8 +4,19 @@ screenshots/preview/
 *.swp
 # tools/*.py leave one of these behind when run directly.
 __pycache__/
-# Local IDE and agent configurations
+*.py[cod]
+*$py.class
+
+# Local IDE and editor configurations
 .idea/
+.vscode/
 .agents/
 *.code-workspace
+
+# Patch and temporary editor artifacts
+*.orig
+*.rej
+*~
+*.swp
+.DS_Store
 

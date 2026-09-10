@@ -45,9 +45,30 @@ run_test() {
     fi
 }
 
-# 1. Syntax checks
-printf '%s[1/3] Syntax Validation%s\n' "$C_CYA" "$C_OFF"
-run_test "bash-syntax-all" bash -n "$REPO_ROOT/install.sh" "$REPO_ROOT/uninstall.sh" "$REPO_ROOT"/lib/*.sh "$REPO_ROOT"/bin/*
+# 1. Syntax and permissions checks
+printf '%s[1/3] Syntax & Integrity Validation%s\n' "$C_CYA" "$C_OFF"
+run_test "bash-syntax-all" bash -n "$REPO_ROOT/install.sh" "$REPO_ROOT/uninstall.sh" \
+    "$REPO_ROOT"/lib/*.sh "$REPO_ROOT"/bin/* "$REPO_ROOT"/completions/*.bash \
+    "$TOOLS_DIR"/*.sh "$TOOLS_DIR"/hooks/*
+
+run_test "python-syntax-all" python3 -m py_compile "$REPO_ROOT"/gui/*.py "$TOOLS_DIR"/*.py
+
+check_bin_executable() {
+    local f missing=0
+    for f in "$REPO_ROOT"/bin/*; do
+        [ -f "$f" ] || continue
+        if [ ! -x "$f" ]; then
+            printf 'not executable: %s\n' "$f"
+            missing=$((missing + 1))
+        fi
+    done
+    return "$missing"
+}
+run_test "bin-executable-permissions" check_bin_executable
+
+if command -v shellcheck >/dev/null 2>&1; then
+    run_test "shellcheck-lint" shellcheck -x "$REPO_ROOT/install.sh" "$REPO_ROOT/uninstall.sh" "$REPO_ROOT"/bin/* "$REPO_ROOT"/lib/*.sh
+fi
 
 # 2. Shell test scripts
 printf '\n%s[2/3] Shell Test Suites%s\n' "$C_CYA" "$C_OFF"

@@ -358,6 +358,8 @@ step "Removing aura-glass itself"
 run rm -f "$HOME/.local/bin/aura-glass-apply" "$HOME/.local/bin/aura-glass-icon-sync" \
           "$HOME/.local/bin/aura-glass-panel-blur" "$HOME/.local/bin/aura-glass-gdm-sync" \
           "$HOME/.local/bin/aura-glass-settings" \
+          "$HOME/.local/bin/aura-glass-preview" \
+          "$HOME/.local/bin/aura-glass-ext" \
           "$HOME/.local/bin/aura-glass-open-once" \
           "$HOME/.local/bin/tahoe-glass-apply" "$HOME/.local/bin/tahoe-glass-icon-sync" \
           "$HOME/.local/bin/tahoe-glass-panel-blur" "$HOME/.local/bin/tahoe-glass-gdm-sync"
@@ -371,7 +373,9 @@ run rm -f "$HOME/.local/share/applications/io.github.DevWebeloper.AuraGlassSetti
 run rm -f "$HOME/.local/share/icons/hicolor/scalable/apps/io.github.DevWebeloper.AuraGlassSettings.svg"
 run rm -f "$HOME/.local/share/bash-completion/completions/aura-glass" \
           "$HOME/.local/share/bash-completion/completions/install.sh" \
-          "$HOME/.local/share/bash-completion/completions/uninstall.sh"
+          "$HOME/.local/share/bash-completion/completions/uninstall.sh" \
+          "$HOME/.local/share/bash-completion/completions/aura-glass-apply" \
+          "$HOME/.local/share/bash-completion/completions/aura-glass-ext"
 # The open-once autostart entry, if an install armed it and no login has spent
 # it yet. Left behind it would open a window that is no longer installed, on
 # every login, forever — the entry only deletes itself when it manages to run.
@@ -402,7 +406,7 @@ run rm -f "$CONF_DIR/bms-ref" "$CONF_DIR/bms-source" \
           "$CONF_DIR/radius-preset" \
           "$CONF_DIR/repo-path" \
           "$CONF_DIR/update-check" \
-          "$CONF_DIR/update-available" \
+          "$CONF_DIR"/update-available* \
           "$CONF_DIR/app-blur-allow" \
           "$CONF_DIR/app-blur-block" \
           "$CONF_DIR/cursor-pack" \

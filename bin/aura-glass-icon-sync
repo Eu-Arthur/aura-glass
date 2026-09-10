@@ -68,8 +68,12 @@ apply() {
 apply
 [ "${1:-}" = "--once" ] && exit 0
 
+# Terminate background jobs cleanly on exit
+trap 'kill $(jobs -p) 2>/dev/null || true' EXIT INT TERM
+
 # gsettings monitor prints a line per change and never exits, so this is the
 # whole loop. Any line is a colour-scheme change worth reacting to.
-gsettings monitor org.gnome.desktop.interface color-scheme | while read -r _; do
+gsettings monitor org.gnome.desktop.interface color-scheme 2>/dev/null | while read -r _; do
+    while read -r -t 1 _; do :; done
     apply || true
 done
