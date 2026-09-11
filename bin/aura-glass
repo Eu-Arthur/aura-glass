@@ -252,9 +252,31 @@ cmd_shortcut() {
     local path_settings="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/aura-glass-settings/"
     local schema="org.gnome.settings-daemon.plugins.media-keys.custom-keybinding"
 
-    if ! command -v gsettings >/dev/null 2>&1; then
-        printf 'error: gsettings is required to manage shortcuts\n' >&2
-        exit 1
+    if ! command -v gsettings >/dev/null 2>&1 || ! gsettings list-schemas 2>/dev/null | grep -q '^org\.gnome\.settings-daemon\.plugins\.media-keys$'; then
+        case "$action" in
+            status)
+                printf 'Aura Glass Keyboard Shortcuts:\n'
+                printf '  ○ Unavailable (GNOME media-keys schema not installed in this environment)\n'
+                return 0
+                ;;
+            enable|install|disable|remove)
+                printf 'warn: GNOME media-keys schema is not installed in this environment\n' >&2
+                return 0
+                ;;
+            -h|--help|help)
+                cat <<'EOF'
+USAGE:
+    aura-glass shortcut status
+    aura-glass shortcut enable
+    aura-glass shortcut disable
+EOF
+                return 0
+                ;;
+            *)
+                printf 'error: unknown shortcut action "%s". Use: status, enable, disable\n' "$action" >&2
+                exit 1
+                ;;
+        esac
     fi
 
     case "$action" in

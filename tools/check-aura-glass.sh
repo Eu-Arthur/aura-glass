@@ -58,13 +58,18 @@ out_accent_json="$("$CLI" accent auto --json 2>&1)" || note "aura-glass accent a
 out_shortcut_status="$("$CLI" shortcut status 2>&1)" || note "aura-glass shortcut status failed"
 [[ "$out_shortcut_status" =~ "Keyboard Shortcuts" ]] || note "shortcut status missing header"
 
-"$CLI" shortcut enable >/dev/null 2>&1 || note "aura-glass shortcut enable failed"
-out_shortcut_en="$("$CLI" shortcut status 2>&1)" || note "aura-glass shortcut status after enable failed"
-[[ "$out_shortcut_en" =~ "<Super><Alt>g" ]] || note "shortcut status missing enabled <Super><Alt>g"
+if command -v gsettings >/dev/null 2>&1 && gsettings list-schemas 2>/dev/null | grep -q '^org\.gnome\.settings-daemon\.plugins\.media-keys$'; then
+    "$CLI" shortcut enable >/dev/null 2>&1 || note "aura-glass shortcut enable failed"
+    out_shortcut_en="$("$CLI" shortcut status 2>&1)" || note "aura-glass shortcut status after enable failed"
+    [[ "$out_shortcut_en" =~ "<Super><Alt>g" ]] || note "shortcut status missing enabled <Super><Alt>g"
 
-"$CLI" shortcut disable >/dev/null 2>&1 || note "aura-glass shortcut disable failed"
-out_shortcut_dis="$("$CLI" shortcut status 2>&1)" || note "aura-glass shortcut status after disable failed"
-[[ "$out_shortcut_dis" =~ "not installed" ]] || note "shortcut status not showing 'not installed' after disable"
+    "$CLI" shortcut disable >/dev/null 2>&1 || note "aura-glass shortcut disable failed"
+    out_shortcut_dis="$("$CLI" shortcut status 2>&1)" || note "aura-glass shortcut status after disable failed"
+    [[ "$out_shortcut_dis" =~ "not installed" ]] || note "shortcut status not showing 'not installed' after disable"
+else
+    "$CLI" shortcut enable >/dev/null 2>&1 || note "aura-glass shortcut enable failed in headless mode"
+    "$CLI" shortcut disable >/dev/null 2>&1 || note "aura-glass shortcut disable failed in headless mode"
+fi
 
 # 7. Unknown command error handling
 set +e
