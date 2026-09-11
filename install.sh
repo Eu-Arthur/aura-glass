@@ -1426,6 +1426,6 @@ if [ "$WANT_GDM_MONITORS" = 1 ]; then
     [ "$WANT_GDM" != 1 ] && install_gdm_sync_unit
 fi
 if [ "$WANT_GDM" = 1 ]; then
-    install_gdm
+    install_gdm "$GDM_BG"
 fi
 finish

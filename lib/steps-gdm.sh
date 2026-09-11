@@ -9,6 +9,7 @@
 
 WHITESUR_REPO="https://github.com/vinceliuice/WhiteSur-gtk-theme.git"
 WHITESUR_REF="1912dee2e48d"
+CONF_DIR="${CONF_DIR:-$HOME/.config/aura-glass}"
 
 get_desktop_wallpaper() {
     local uri
@@ -25,13 +26,71 @@ get_desktop_wallpaper() {
     fi
 }
 
+resolve_gdm_wallpaper_source() {
+    local preferred="${1:-default}"
+
+    # 1. Check explicitly specified background (--gdm-background)
+    if [ -n "$preferred" ] && [ "$preferred" != "default" ]; then
+        if [ -f "$preferred" ]; then
+            echo "$preferred"
+            return 0
+        else
+            warn "specified GDM background not found: $preferred"
+        fi
+    fi
+
+    # 2. Check active desktop wallpaper
+    local cur; cur="$(get_desktop_wallpaper)"
+    if [ -n "$cur" ] && [ -f "$cur" ]; then
+        echo "$cur"
+        return 0
+    fi
+
+    # 3. Check known distribution default wallpapers
+    local distro_candidates=(
+        "/usr/share/backgrounds/gnome/adwaita-d.jxl"
+        "/usr/share/backgrounds/gnome/adwaita-l.jxl"
+        "/usr/share/backgrounds/gnome/adwaita-d.webp"
+        "/usr/share/backgrounds/gnome/adwaita-l.webp"
+        "/usr/share/backgrounds/gnome/adwaita-d.jpg"
+        "/usr/share/backgrounds/gnome/adwaita-l.jpg"
+        "/usr/share/backgrounds/gnome/adwaita-d.png"
+        "/usr/share/backgrounds/gnome/adwaita-l.png"
+        "/usr/share/backgrounds/default.png"
+        "/usr/share/backgrounds/default.jpg"
+        "/usr/share/backgrounds/warty-final-ubuntu.png"
+    )
+    for f in "${distro_candidates[@]}"; do
+        if [ -f "$f" ]; then
+            echo "$f"
+            return 0
+        fi
+    done
+
+    # 4. Search any readable image in /usr/share/backgrounds
+    local any_bg
+    any_bg="$(find /usr/share/backgrounds -maxdepth 2 -type f \( -name "*.jpg" -o -name "*.png" -o -name "*.webp" \) 2>/dev/null | head -n 1 || true)"
+    if [ -n "$any_bg" ] && [ -f "$any_bg" ]; then
+        echo "$any_bg"
+        return 0
+    fi
+
+    # Fallback signal for procedural generator
+    echo "procedural"
+}
+
 generate_gdm_wallpaper() {
     local src="$1" dst="$2"
-    [ -f "$src" ] || return 1
+    [ -n "$src" ] || src="procedural"
 
     local memo_file="$CONF_DIR/gdm-wallpaper-memo"
     local current_memo
-    current_memo="$src:$(stat -c %Y "$src" 2>/dev/null || true)"
+    if [ "$src" != "procedural" ] && [ -f "$src" ]; then
+        current_memo="$src:$(stat -c %Y "$src" 2>/dev/null || true)"
+    else
+        current_memo="procedural:aura-glass"
+    fi
+
     if [ -f "$dst" ] && [ -s "$dst" ] && [ -f "$memo_file" ]; then
         if [ "$(read_memo "$memo_file")" = "$current_memo" ]; then
             return 0
@@ -39,28 +98,63 @@ generate_gdm_wallpaper() {
     fi
 
     python3 - "$src" "$dst" <<'PY' || return 1
-import os, sys, urllib.parse, subprocess
-from PIL import Image, ImageFilter, ImageEnhance, ImageOps
+import os, sys, subprocess, xml.etree.ElementTree as ET
 
 src = sys.argv[1]
 dst = sys.argv[2]
 
-if not os.path.exists(src):
-    sys.exit(1)
+def generate_procedural_fallback(out_path):
+    from PIL import Image, ImageFilter, ImageDraw
+    im = Image.new('RGB', (2560, 1440), color=(14, 16, 26))
+    draw = ImageDraw.Draw(im)
+    for y in range(1440):
+        factor = y / 1440.0
+        r = int(14 + factor * 14)
+        g = int(17 + factor * 20)
+        b = int(28 + factor * 42)
+        draw.line([(0, y), (2560, y)], fill=(r, g, b))
+    im = im.filter(ImageFilter.GaussianBlur(radius=5))
+    im.save(out_path, format="PNG")
 
-if src.lower().endswith(('.svg', '.svgz')):
-    try:
-        subprocess.run([
-            "magick", "-density", "150", src,
-            "-resize", "2560x1440^", "-gravity", "center", "-extent", "2560x1440",
-            "-blur", "0x30", "-fill", "black", "-colorize", "40%", dst
-        ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        sys.exit(0)
-    except Exception:
-        pass
+def resolve_source(path):
+    if not path or path == "procedural" or not os.path.exists(path):
+        return None
+    if path.lower().endswith('.xml'):
+        try:
+            tree = ET.parse(path)
+            root = tree.getroot()
+            for file_elem in root.iter('file'):
+                candidate = file_elem.text.strip() if file_elem.text else ""
+                if candidate and os.path.exists(candidate):
+                    return candidate
+            for from_elem in root.iter('from'):
+                candidate = from_elem.text.strip() if from_elem.text else ""
+                if candidate and os.path.exists(candidate):
+                    return candidate
+        except Exception:
+            return None
+    return path
+
+resolved = resolve_source(src)
 
 try:
-    im = Image.open(src).convert('RGB')
+    from PIL import Image, ImageFilter, ImageEnhance, ImageOps
+    if not resolved:
+        generate_procedural_fallback(dst)
+        sys.exit(0)
+
+    if resolved.lower().endswith(('.svg', '.svgz')):
+        try:
+            subprocess.run([
+                "magick", "-density", "150", resolved,
+                "-resize", "2560x1440^", "-gravity", "center", "-extent", "2560x1440",
+                "-blur", "0x30", "-fill", "black", "-colorize", "40%", dst
+            ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            sys.exit(0)
+        except Exception:
+            pass
+
+    im = Image.open(resolved).convert('RGB')
     im = ImageOps.fit(im, (2560, 1440), method=Image.Resampling.LANCZOS)
     im = im.filter(ImageFilter.GaussianBlur(radius=30))
     enhancer = ImageEnhance.Brightness(im)
@@ -68,15 +162,24 @@ try:
     im.save(dst, format="PNG")
     sys.exit(0)
 except Exception:
-    try:
+    pass
+
+# ImageMagick fallback
+try:
+    if resolved and os.path.exists(resolved):
         subprocess.run([
-            "magick", src,
+            "magick", resolved,
             "-resize", "2560x1440^", "-gravity", "center", "-extent", "2560x1440",
             "-blur", "0x30", "-fill", "black", "-colorize", "40%", dst
         ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         sys.exit(0)
-    except Exception:
-        sys.exit(1)
+    else:
+        subprocess.run([
+            "magick", "-size", "2560x1440", "gradient:#0e101a-#1c2342", dst
+        ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        sys.exit(0)
+except Exception:
+    sys.exit(1)
 PY
 
     mkdir -p "$CONF_DIR"
@@ -202,7 +305,34 @@ have_image_processor() {
     python3 -c 'import PIL' >/dev/null 2>&1 || have magick
 }
 
+detect_gdm_theme_files() {
+    local candidates=(
+        "/usr/share/gnome-shell/gdm-theme.gresource"
+        "/etc/alternatives/gdm-theme.gresource"
+        "/usr/share/gnome-shell/theme/Yaru/gnome-shell-theme.gresource"
+        "/usr/share/gnome-shell/theme/Yaru-dark/gnome-shell-theme.gresource"
+        "/usr/share/gnome-shell/gnome-shell-theme.gresource"
+    )
+
+    for c in "${candidates[@]}"; do
+        if [ -L "$c" ]; then
+            local resolved
+            resolved="$(readlink -f "$c" 2>/dev/null || true)"
+            if [ -n "$resolved" ] && [ -f "$resolved" ]; then
+                echo "$resolved"
+                return 0
+            fi
+        elif [ -f "$c" ]; then
+            echo "$c"
+            return 0
+        fi
+    done
+
+    echo "/usr/share/gnome-shell/gnome-shell-theme.gresource"
+}
+
 install_gdm() {
+    local gdm_bg="${1:-${GDM_BG:-default}}"
     step "Installing the GDM Login Screen theme (requires sudo)"
 
     if ! have gdm && ! have gdm3 && [ ! -e /usr/sbin/gdm3 ]; then
@@ -218,8 +348,42 @@ install_gdm() {
             debian) gcr_pkg="libglib2.0-dev-bin" ;;
             *)      gcr_pkg="glib-compile-resources" ;;
         esac
-        warn "glib-compile-resources is required to build the GDM theme (install $gcr_pkg)"
-        return 1
+        warn "glib-compile-resources missing (install $gcr_pkg for full shell theme rebuild)"
+        info "Activating GDM fallback mode: syncing wallpaper and monitor layout..."
+
+        # 1. Sync primary monitor layout to GDM if requested
+        if [ "${WANT_GDM_MONITORS:-0}" = 1 ] && [ ! -f "$CONF_DIR/gdm-monitors-synced" ]; then
+            sync_gdm_monitors
+        fi
+
+        # 2. Prepare initial blurred desktop wallpaper in /usr/share/backgrounds/aura-gdm.png
+        local target_wall="/usr/share/backgrounds/aura-gdm.png"
+        local wall_src; wall_src="$(resolve_gdm_wallpaper_source "$gdm_bg")"
+
+        if [ "${DRY_RUN:-0}" = 1 ]; then
+            info "dry-run: generate $target_wall from $wall_src"
+        else
+            sudo mkdir -p /usr/share/backgrounds
+            local tmp_init
+            tmp_init="$(mktemp /tmp/aura-gdm-init.XXXXXX.png)"
+            if generate_gdm_wallpaper "$wall_src" "$tmp_init"; then
+                sudo cp -f "$tmp_init" "$target_wall"
+                rm -f "$tmp_init"
+            else
+                rm -f "$tmp_init"
+                printf '\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc`\x00\x00\x00\x02\x00\x01H\xaf\xa4q\x00\x00\x00\x00IEND\xaeB`\x82' | sudo tee "$target_wall" >/dev/null
+            fi
+            sudo chown "$USER:" "$target_wall"
+            sudo chmod 644 "$target_wall"
+        fi
+
+        install_gdm_sync_unit
+        if [ "${DRY_RUN:-0}" != 1 ]; then
+            mkdir -p "$CONF_DIR"
+            printf '%s\n' "fallback" > "$CONF_DIR/gdm-installed"
+        fi
+        ok "GDM configured in fallback mode (wallpaper & monitor sync active)"
+        return 0
     fi
 
     if ! have_image_processor; then
@@ -241,30 +405,48 @@ install_gdm() {
 
     # 2. Prepare initial blurred desktop wallpaper in /usr/share/backgrounds/aura-gdm.png
     local target_wall="/usr/share/backgrounds/aura-gdm.png"
-    local cur_wall; cur_wall="$(get_desktop_wallpaper)"
+    local wall_src
+    wall_src="$(resolve_gdm_wallpaper_source "$gdm_bg")"
 
     if [ "${DRY_RUN:-0}" = 1 ]; then
-        info "dry-run: generate $target_wall from $cur_wall and make writable for live wallpaper sync"
+        info "dry-run: generate $target_wall from $wall_src and make writable for live wallpaper sync"
     else
         sudo mkdir -p /usr/share/backgrounds
         local tmp_init
         tmp_init="$(mktemp /tmp/aura-gdm-init.XXXXXX.png)"
-        if [ -n "$cur_wall" ] && generate_gdm_wallpaper "$cur_wall" "$tmp_init"; then
+        if generate_gdm_wallpaper "$wall_src" "$tmp_init"; then
             sudo cp -f "$tmp_init" "$target_wall"
             rm -f "$tmp_init"
         else
             rm -f "$tmp_init"
-            sudo touch "$target_wall"
+            # Fallback 1x1 valid PNG in the extreme case all generators fail
+            printf '\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc`\x00\x00\x00\x02\x00\x01H\xaf\xa4q\x00\x00\x00\x00IEND\xaeB`\x82' | sudo tee "$target_wall" >/dev/null
         fi
         sudo chown "$USER:" "$target_wall"
         sudo chmod 644 "$target_wall"
-        ok "GDM background configured from desktop wallpaper ($target_wall)"
+        ok "GDM background configured from $wall_src ($target_wall)"
     fi
 
     # 3. Compile and install GDM theme patched to link directly to file:///usr/share/backgrounds/aura-gdm.png
     info "Preparing WhiteSur GDM resources..."
     local src="$SRC_CACHE/WhiteSur-gtk-theme"
     clone_pinned "$WHITESUR_REPO" "$WHITESUR_REF" "$src"
+
+    local gdm_res
+    gdm_res="$(detect_gdm_theme_files)"
+    local gdm_backup_record="$CONF_DIR/gdm-backup-path"
+    local gdm_backup_file=""
+
+    if [ -f "$gdm_res" ]; then
+        gdm_backup_file="${gdm_res}.aura-backup"
+        if [ "${DRY_RUN:-0}" = 1 ]; then
+            info "dry-run: sudo cp -f $gdm_res $gdm_backup_file"
+        else
+            sudo cp -f "$gdm_res" "$gdm_backup_file" 2>/dev/null || true
+            mkdir -p "$CONF_DIR"
+            echo "$gdm_backup_file" > "$gdm_backup_record"
+        fi
+    fi
 
     if [ "${DRY_RUN:-0}" = 1 ]; then
         info "dry-run: compile GDM theme with background linking to $target_wall"
@@ -297,8 +479,21 @@ install_gdm() {
                     warn "  $err_line"
                 done
             fi
+            # Automatic rollback fallback: restore original gresource if modified or corrupted
+            if [ -n "$gdm_backup_file" ] && [ -f "$gdm_backup_file" ]; then
+                warn "Triggering automatic GDM rollback fallback..."
+                sudo cp -f "$gdm_backup_file" "$gdm_res" 2>/dev/null || true
+                rm -f "$gdm_backup_record"
+                ok "GDM stock theme safely restored after failed build"
+            fi
             rm -f "$gdm_log"
-            return 1
+
+            # Fall back cleanly to background & monitor sync
+            mkdir -p "$CONF_DIR"
+            printf '%s\n' "fallback" > "$CONF_DIR/gdm-installed"
+            install_gdm_sync_unit
+            ok "GDM configured in fallback mode (wallpaper & monitor sync active)"
+            return 0
         fi
     fi
 
@@ -326,19 +521,43 @@ uninstall_gdm() {
         fi
     fi
 
-    # Fallback to direct backup file restoration if tweaks.sh didn't run
+    # Fallback to direct backup file restoration if tweaks.sh didn't run or failed
     if [ "$restored" = 0 ]; then
-        local gr_bak="/usr/share/gnome-shell/gnome-shell-theme.gresource.bak"
-        local gr_file="/usr/share/gnome-shell/gnome-shell-theme.gresource"
-        if [ -f "$gr_bak" ]; then
-            if [ "${DRY_RUN:-0}" = 1 ]; then
-                info "dry-run: sudo cp -f $gr_bak $gr_file"
-            else
-                sudo cp -f "$gr_bak" "$gr_file" || true
+        local gdm_res
+        gdm_res="$(detect_gdm_theme_files)"
+        local recorded_bak=""
+        [ -f "$CONF_DIR/gdm-backup-path" ] && recorded_bak="$(cat "$CONF_DIR/gdm-backup-path" 2>/dev/null || true)"
+
+        local backup_candidates=(
+            "$recorded_bak"
+            "${gdm_res}.aura-backup"
+            "${gdm_res}.bak"
+            "/usr/share/gnome-shell/gnome-shell-theme.gresource.bak"
+            "/usr/share/gnome-shell/gdm-theme.gresource.bak"
+            "/usr/share/gnome-shell/theme/Yaru/gnome-shell-theme.gresource.bak"
+        )
+
+        for bak in "${backup_candidates[@]}"; do
+            if [ -n "$bak" ] && [ -f "$bak" ]; then
+                if [ "${DRY_RUN:-0}" = 1 ]; then
+                    info "dry-run: sudo cp -f $bak $gdm_res"
+                else
+                    sudo cp -f "$bak" "$gdm_res" 2>/dev/null || true
+                fi
+                restored=1
+                break
             fi
-            restored=1
+        done
+
+        if [ "$restored" = 1 ] && [ -e /etc/alternatives/gdm-theme.gresource ] && command -v update-alternatives >/dev/null 2>&1; then
+            if [ "${DRY_RUN:-0}" != 1 ]; then
+                sudo update-alternatives --auto gdm-theme.gresource 2>/dev/null || true
+            fi
         fi
     fi
+
+    # Clean up recorded backup path
+    rm -f "$CONF_DIR/gdm-backup-path"
 
     # Remove dynamic background file
     for bg_file in "/usr/share/backgrounds/aura-gdm.png" "/usr/share/backgrounds/tahoe-gdm.png"; do
