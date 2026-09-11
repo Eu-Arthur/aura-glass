@@ -114,8 +114,9 @@ try:
             pass
 
     im = Image.open(resolved).convert('RGB')
-    im = ImageOps.fit(im, (2560, 1440), method=Image.Resampling.LANCZOS)
-    im = im.filter(ImageFilter.GaussianBlur(radius=30))
+    small = ImageOps.fit(im, (640, 360), method=Image.Resampling.BILINEAR)
+    small = small.filter(ImageFilter.BoxBlur(10))
+    im = small.resize((2560, 1440), resample=Image.Resampling.BILINEAR)
     enhancer = ImageEnhance.Brightness(im)
     im = enhancer.enhance(0.55)
     im.save(dst, format="PNG")

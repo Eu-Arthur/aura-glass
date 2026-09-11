@@ -164,6 +164,10 @@ export default class AuraGlassBlurExtension extends Extension {
         this._windowCreatedId = 0;
         this._destroyIds = new Map();
 
+        // Inhibit state tracking for power saving (battery, fullscreen, screen lock)
+        this._inhibitReasons = new Set();
+        this._initInhibitWatchers();
+
         // Native icon synchronization following light/dark preference
         this._initIconSync();
 
@@ -185,6 +189,7 @@ export default class AuraGlassBlurExtension extends Extension {
         }
         this._settings = null;
 
+        this._destroyInhibitWatchers();
         this._destroyIconSync();
         this._destroyAutoEcoWatcher();
 
@@ -562,9 +567,9 @@ export default class AuraGlassBlurExtension extends Extension {
         this._interfaceSettings = null;
     }
 
-    _syncIconTheme() {
-        if (!this._interfaceSettings)
-            return;
+    _getIconBaseName() {
+        if (this._cachedIconBase)
+            return this._cachedIconBase;
 
         const confDir = GLib.build_filenamev([GLib.get_user_config_dir(), 'aura-glass']);
         const packFile = GLib.build_filenamev([confDir, 'icon-pack']);
@@ -573,8 +578,10 @@ export default class AuraGlassBlurExtension extends Extension {
                 const [ok, bytes] = GLib.file_get_contents(packFile);
                 if (ok) {
                     const pack = new TextDecoder().decode(bytes).trim();
-                    if (pack === 'keep')
-                        return;
+                    if (pack === 'keep') {
+                        this._cachedIconBase = 'keep';
+                        return 'keep';
+                    }
                 }
             } catch (_) {}
         }
@@ -596,6 +603,17 @@ export default class AuraGlassBlurExtension extends Extension {
                 } catch (_) {}
             }
         }
+        this._cachedIconBase = base;
+        return base;
+    }
+
+    _syncIconTheme() {
+        if (!this._interfaceSettings)
+            return;
+
+        const base = this._getIconBaseName();
+        if (base === 'keep')
+            return;
 
         const scheme = this._interfaceSettings.get_string('color-scheme') || '';
         const variant = scheme.includes('prefer-dark') ? 'Dark' : 'Light';
@@ -622,6 +640,115 @@ export default class AuraGlassBlurExtension extends Extension {
         const cur = this._interfaceSettings.get_string('icon-theme');
         if (cur !== want)
             this._interfaceSettings.set_string('icon-theme', want);
+    }
+
+    // ---- Performance Watchers: Fullscreen & Screen Lock Inhibit ------------
+
+    _initInhibitWatchers() {
+        this._fullscreenSignalId = 0;
+        this._lockedSignalId = 0;
+
+        try {
+            if (global.display) {
+                this._fullscreenSignalId = global.display.connect(
+                    'in-fullscreen-changed', () => this._checkFullscreen());
+            }
+        } catch (_) {}
+
+        try {
+            if (Main.screenShield) {
+                this._lockedSignalId = Main.screenShield.connect(
+                    'locked-changed', () => this._checkLocked());
+            }
+        } catch (_) {}
+
+        this._checkFullscreen();
+        this._checkLocked();
+    }
+
+    _destroyInhibitWatchers() {
+        if (this._fullscreenSignalId && global.display) {
+            global.display.disconnect(this._fullscreenSignalId);
+            this._fullscreenSignalId = 0;
+        }
+        if (this._lockedSignalId && Main.screenShield) {
+            Main.screenShield.disconnect(this._lockedSignalId);
+            this._lockedSignalId = 0;
+        }
+        if (this._inhibitReasons)
+            this._inhibitReasons.clear();
+    }
+
+    _checkFullscreen() {
+        let isFullscreen = false;
+        try {
+            for (const actor of global.get_window_actors()) {
+                const w = actor.get_meta_window();
+                if (w && !w.is_override_redirect() && w.is_fullscreen()) {
+                    isFullscreen = true;
+                    break;
+                }
+            }
+        } catch (_) {}
+
+        if (isFullscreen)
+            this._addInhibitReason('fullscreen', false);
+        else
+            this._removeInhibitReason('fullscreen', false);
+    }
+
+    _checkLocked() {
+        if (!Main.screenShield)
+            return;
+        if (Main.screenShield.locked)
+            this._addInhibitReason('locked', false);
+        else
+            this._removeInhibitReason('locked', false);
+    }
+
+    _addInhibitReason(reason, isInitial) {
+        if (!this._inhibitReasons)
+            return;
+
+        const wasEmpty = (this._inhibitReasons.size === 0);
+        this._inhibitReasons.add(reason);
+
+        if (wasEmpty) {
+            const confDir = GLib.build_filenamev([GLib.get_user_config_dir(), 'aura-glass']);
+            const appSettings = this._openBmsSettings(BMS_SCHEMA_ID);
+            if (appSettings && appSettings.get_boolean('blur')) {
+                appSettings.set_boolean('blur', false);
+                const activeMarker = GLib.build_filenamev([confDir, 'perf-inhibited']);
+                GLib.file_set_contents(activeMarker, '1\n');
+            }
+            if (!isInitial && reason === 'battery') {
+                Main.notify('Aura Glass', _('Eco mode enabled (running on battery)'));
+            }
+        }
+    }
+
+    _removeInhibitReason(reason, isInitial) {
+        if (!this._inhibitReasons)
+            return;
+
+        this._inhibitReasons.delete(reason);
+        if (this._inhibitReasons.size === 0) {
+            const confDir = GLib.build_filenamev([GLib.get_user_config_dir(), 'aura-glass']);
+            const activeMarker = GLib.build_filenamev([confDir, 'perf-inhibited']);
+            const autoEcoMarker = GLib.build_filenamev([confDir, 'auto-eco-active']);
+            const stylingOff = GLib.build_filenamev([confDir, 'styling-off']);
+            const appSettings = this._openBmsSettings(BMS_SCHEMA_ID);
+
+            if (GLib.file_test(activeMarker, GLib.FileTest.EXISTS) || GLib.file_test(autoEcoMarker, GLib.FileTest.EXISTS)) {
+                try { GLib.unlink(activeMarker); } catch (_) {}
+                try { GLib.unlink(autoEcoMarker); } catch (_) {}
+                if (appSettings && !GLib.file_test(stylingOff, GLib.FileTest.EXISTS))
+                    appSettings.set_boolean('blur', true);
+            }
+            if (!isInitial && reason === 'battery') {
+                Main.notify('Aura Glass', _('Full frosted glass restored (AC plugged in)'));
+            }
+        }
     }
 
     // ---- native auto-eco battery watcher -----------------------------------
@@ -676,7 +803,6 @@ export default class AuraGlassBlurExtension extends Extension {
         if (GLib.file_test(optOut, GLib.FileTest.EXISTS))
             return;
 
-        const appSettings = this._openBmsSettings(BMS_SCHEMA_ID);
         const coreSettings = this._openBmsSettings(BMS_CORE_SCHEMA_ID);
 
         if (onBattery) {
@@ -691,15 +817,7 @@ export default class AuraGlassBlurExtension extends Extension {
                 }
             }
 
-            // Pause heavy window blur shaders
-            if (appSettings && appSettings.get_boolean('blur')) {
-                appSettings.set_boolean('blur', false);
-                const activeMarker = GLib.build_filenamev([confDir, 'auto-eco-active']);
-                GLib.file_set_contents(activeMarker, '1\n');
-            }
-
-            if (!isInitial)
-                Main.notify('Aura Glass', _('Eco mode enabled (running on battery)'));
+            this._addInhibitReason('battery', isInitial);
         } else {
             if (!this._autoEcoActive && !isInitial)
                 return;
@@ -712,17 +830,7 @@ export default class AuraGlassBlurExtension extends Extension {
                 }
             }
 
-            // Restore window blur if mode was frosted
-            const activeMarker = GLib.build_filenamev([confDir, 'auto-eco-active']);
-            const stylingOff = GLib.build_filenamev([confDir, 'styling-off']);
-            if (GLib.file_test(activeMarker, GLib.FileTest.EXISTS)) {
-                try { GLib.unlink(activeMarker); } catch (_) {}
-                if (appSettings && !GLib.file_test(stylingOff, GLib.FileTest.EXISTS))
-                    appSettings.set_boolean('blur', true);
-            }
-
-            if (!isInitial)
-                Main.notify('Aura Glass', _('Full frosted glass restored (AC plugged in)'));
+            this._removeInhibitReason('battery', isInitial);
         }
     }
 }
