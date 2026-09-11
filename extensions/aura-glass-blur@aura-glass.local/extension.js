@@ -43,6 +43,7 @@ import {Extension, gettext as _} from 'resource:///org/gnome/shell/extensions/ex
 const BMS_UUID = 'blur-my-shell@aunetx';
 const BMS_SCHEMA_ID = 'org.gnome.shell.extensions.blur-my-shell.applications';
 const BMS_PANEL_SCHEMA_ID = 'org.gnome.shell.extensions.blur-my-shell.panel';
+const BMS_CORE_SCHEMA_ID = 'org.gnome.shell.extensions.blur-my-shell';
 
 // Pinned back onto the whitelist by every install.sh run (app_blur_pin_allow
 // in lib/steps-dconf.sh) — the same string is duplicated in
@@ -163,6 +164,12 @@ export default class AuraGlassBlurExtension extends Extension {
         this._windowCreatedId = 0;
         this._destroyIds = new Map();
 
+        // Native icon synchronization following light/dark preference
+        this._initIconSync();
+
+        // Native automatic battery power saving (Auto-Eco Watcher)
+        this._initAutoEcoWatcher();
+
         // Native monitor layout watch for Blur My Shell panel blur actor rebuild
         this._panelBlurTimer = 0;
         this._panelBlurRestoreTimer = 0;
@@ -177,6 +184,9 @@ export default class AuraGlassBlurExtension extends Extension {
             this._origBuildMenu = null;
         }
         this._settings = null;
+
+        this._destroyIconSync();
+        this._destroyAutoEcoWatcher();
 
         this._stopWindowTracking();
         this._destroyIds = null;
@@ -525,5 +535,194 @@ export default class AuraGlassBlurExtension extends Extension {
                     this._dbusImpl.emit_signal('WindowsChanged', null);
                 return GLib.SOURCE_REMOVE;
             });
+    }
+
+    // ---- native icon synchronization --------------------------------------
+
+    // Keeps the icon theme aligned with the light/dark preference without
+    // needing external background daemons.
+    _initIconSync() {
+        try {
+            this._interfaceSettings = new Gio.Settings({
+                schema_id: 'org.gnome.desktop.interface',
+            });
+            this._colorSchemeChangedId = this._interfaceSettings.connect(
+                'changed::color-scheme', () => this._syncIconTheme());
+            this._syncIconTheme();
+        } catch (_) {
+            this._interfaceSettings = null;
+        }
+    }
+
+    _destroyIconSync() {
+        if (this._colorSchemeChangedId && this._interfaceSettings) {
+            this._interfaceSettings.disconnect(this._colorSchemeChangedId);
+            this._colorSchemeChangedId = 0;
+        }
+        this._interfaceSettings = null;
+    }
+
+    _syncIconTheme() {
+        if (!this._interfaceSettings)
+            return;
+
+        const confDir = GLib.build_filenamev([GLib.get_user_config_dir(), 'aura-glass']);
+        const packFile = GLib.build_filenamev([confDir, 'icon-pack']);
+        if (GLib.file_test(packFile, GLib.FileTest.EXISTS)) {
+            try {
+                const [ok, bytes] = GLib.file_get_contents(packFile);
+                if (ok) {
+                    const pack = new TextDecoder().decode(bytes).trim();
+                    if (pack === 'keep')
+                        return;
+                }
+            } catch (_) {}
+        }
+
+        let base = 'Colloid';
+        const iconsFile = GLib.build_filenamev([confDir, 'icons']);
+        const tahoeFile = GLib.build_filenamev([GLib.get_user_config_dir(), 'tahoe-glass', 'icons']);
+        for (const f of [iconsFile, tahoeFile]) {
+            if (GLib.file_test(f, GLib.FileTest.EXISTS)) {
+                try {
+                    const [ok, bytes] = GLib.file_get_contents(f);
+                    if (ok) {
+                        const name = new TextDecoder().decode(bytes).trim();
+                        if (name) {
+                            base = name;
+                            break;
+                        }
+                    }
+                } catch (_) {}
+            }
+        }
+
+        const scheme = this._interfaceSettings.get_string('color-scheme') || '';
+        const variant = scheme.includes('prefer-dark') ? 'Dark' : 'Light';
+
+        const candidates = [
+            `${base}-${variant}`,
+            `${base}-${variant.toLowerCase()}`,
+            base,
+        ];
+
+        let want = null;
+        for (const c of candidates) {
+            const userDir = GLib.build_filenamev([GLib.get_home_dir(), '.local', 'share', 'icons', c]);
+            const sysDir = `/usr/share/icons/${c}`;
+            if (GLib.file_test(userDir, GLib.FileTest.IS_DIR) || GLib.file_test(sysDir, GLib.FileTest.IS_DIR)) {
+                want = c;
+                break;
+            }
+        }
+
+        if (!want)
+            return;
+
+        const cur = this._interfaceSettings.get_string('icon-theme');
+        if (cur !== want)
+            this._interfaceSettings.set_string('icon-theme', want);
+    }
+
+    // ---- native auto-eco battery watcher -----------------------------------
+
+    // Monitors UPower for battery/AC transitions. On battery, automatically
+    // pauses window blur and lowers hacks-level to 1 (clipped redraws).
+    // Restores full frosted glass when plugged back into AC.
+    _initAutoEcoWatcher() {
+        this._upowerProxy = null;
+        this._upowerSignalId = 0;
+        this._autoEcoActive = false;
+
+        try {
+            this._upowerProxy = Gio.DBusProxy.new_for_bus_sync(
+                Gio.BusType.SYSTEM,
+                Gio.DBusProxyFlags.NONE,
+                null,
+                'org.freedesktop.UPower',
+                '/org/freedesktop/UPower',
+                'org.freedesktop.UPower',
+                null
+            );
+
+            this._upowerSignalId = this._upowerProxy.connect(
+                'g-properties-changed',
+                (_proxy, changed) => {
+                    const onBatVal = changed.lookup_value('OnBattery', null);
+                    if (onBatVal !== null)
+                        this._onPowerChanged(onBatVal.unpack(), false);
+                }
+            );
+
+            const onBatProp = this._upowerProxy.get_cached_property('OnBattery');
+            if (onBatProp !== null)
+                this._onPowerChanged(onBatProp.unpack(), true);
+        } catch (_) {
+            this._upowerProxy = null;
+        }
+    }
+
+    _destroyAutoEcoWatcher() {
+        if (this._upowerSignalId && this._upowerProxy) {
+            this._upowerProxy.disconnect(this._upowerSignalId);
+            this._upowerSignalId = 0;
+        }
+        this._upowerProxy = null;
+    }
+
+    _onPowerChanged(onBattery, isInitial) {
+        const confDir = GLib.build_filenamev([GLib.get_user_config_dir(), 'aura-glass']);
+        const optOut = GLib.build_filenamev([confDir, 'no-auto-eco']);
+        if (GLib.file_test(optOut, GLib.FileTest.EXISTS))
+            return;
+
+        const appSettings = this._openBmsSettings(BMS_SCHEMA_ID);
+        const coreSettings = this._openBmsSettings(BMS_CORE_SCHEMA_ID);
+
+        if (onBattery) {
+            if (this._autoEcoActive)
+                return;
+            this._autoEcoActive = true;
+
+            // Reduce redraw cost: clipped redraws on (hacks-level=1)
+            if (coreSettings) {
+                try { coreSettings.set_int('hacks-level', 1); } catch (_) {
+                    try { coreSettings.set_enum('hacks-level', 1); } catch (_) {}
+                }
+            }
+
+            // Pause heavy window blur shaders
+            if (appSettings && appSettings.get_boolean('blur')) {
+                appSettings.set_boolean('blur', false);
+                const activeMarker = GLib.build_filenamev([confDir, 'auto-eco-active']);
+                GLib.file_set_contents(activeMarker, '1\n');
+            }
+
+            if (!isInitial)
+                Main.notify('Aura Glass', _('Eco mode enabled (running on battery)'));
+        } else {
+            if (!this._autoEcoActive && !isInitial)
+                return;
+            this._autoEcoActive = false;
+
+            // Restore full-screen repaints for smooth frosted overview
+            if (coreSettings) {
+                try { coreSettings.set_int('hacks-level', 2); } catch (_) {
+                    try { coreSettings.set_enum('hacks-level', 2); } catch (_) {}
+                }
+            }
+
+            // Restore window blur if mode was frosted
+            const activeMarker = GLib.build_filenamev([confDir, 'auto-eco-active']);
+            const stylingOff = GLib.build_filenamev([confDir, 'styling-off']);
+            if (GLib.file_test(activeMarker, GLib.FileTest.EXISTS)) {
+                try { GLib.unlink(activeMarker); } catch (_) {}
+                if (appSettings && !GLib.file_test(stylingOff, GLib.FileTest.EXISTS))
+                    appSettings.set_boolean('blur', true);
+            }
+
+            if (!isInitial)
+                Main.notify('Aura Glass', _('Full frosted glass restored (AC plugged in)'));
+        }
     }
 }

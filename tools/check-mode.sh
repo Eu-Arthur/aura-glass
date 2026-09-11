@@ -119,6 +119,21 @@ else
     fail "Eco mode off failed: current='$CUR'"
 fi
 
+# 9. Auto-eco configuration test
+"$BIN" auto on >/dev/null 2>&1
+if [ -f "$AURA_GLASS_DIR/auto-eco" ] && [ ! -f "$AURA_GLASS_DIR/no-auto-eco" ]; then
+    pass "Auto-eco on creates marker and removes opt-out"
+else
+    fail "Auto-eco on marker test failed"
+fi
+
+"$BIN" auto off >/dev/null 2>&1
+if [ -f "$AURA_GLASS_DIR/no-auto-eco" ] && [ ! -f "$AURA_GLASS_DIR/auto-eco" ]; then
+    pass "Auto-eco off creates opt-out marker and removes auto-eco"
+else
+    fail "Auto-eco off opt-out test failed"
+fi
+
 if [ "$FAILURES" -gt 0 ]; then
     printf '\nFailed %d checks in aura-glass-mode.\n' "$FAILURES" >&2
     exit 1

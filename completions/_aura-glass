@@ -133,6 +133,7 @@ _aura_glass_mode() {
         'set:Activate a specified glass mode (frosted, transparent, solid)'
         'toggle:Cycle through glass modes (frosted -> transparent -> solid)'
         'eco:Enable battery-saving eco mode (transparent windows + clipped redraws)'
+        'auto:Configure automatic battery eco mode (on/off/status)'
         'frosted:Directly switch to Frosted glass mode'
         'transparent:Directly switch to Transparent glass mode'
         'solid:Directly switch to Solid (opaque) mode'
@@ -154,6 +155,10 @@ _aura_glass_mode() {
             local -a eco_states
             eco_states=('on:Enable eco mode' 'off:Disable eco mode')
             _describe -t eco_states 'eco state' eco_states
+        elif (( CURRENT == 3 && words[2] == "auto" )); then
+            local -a auto_states
+            auto_states=('on:Enable auto-eco' 'off:Disable auto-eco' 'status:Show auto-eco status')
+            _describe -t auto_states 'auto-eco state' auto_states
         fi
     fi
 }

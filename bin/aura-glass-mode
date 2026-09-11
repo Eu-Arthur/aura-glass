@@ -21,6 +21,7 @@ USAGE:
     aura-glass-mode <frosted | transparent | solid>
     aura-glass-mode toggle
     aura-glass-mode eco [on | off]
+    aura-glass-mode auto [on | off | status]
     aura-glass-mode -h | --help
 
 OPTIONS:
@@ -32,6 +33,7 @@ MODES:
     transparent    Translucent windows without background blur (lighter on GPU)
     solid          Opaque styling with no transparency or blur
     eco            Battery saving preset (transparent windows + clipped redraws)
+    auto           Automatic battery watcher (activates eco when on battery)
 EOF
 }
 
@@ -169,6 +171,33 @@ set_eco() {
     esac
 }
 
+set_auto_eco() {
+    local state="${1:-status}"
+    mkdir -p "$CONF_DIR"
+    case "$state" in
+        on|1|true)
+            rm -f "$CONF_DIR/no-auto-eco"
+            : > "$CONF_DIR/auto-eco"
+            ok "automatic battery eco mode enabled"
+            ;;
+        off|0|false)
+            rm -f "$CONF_DIR/auto-eco"
+            : > "$CONF_DIR/no-auto-eco"
+            ok "automatic battery eco mode disabled"
+            ;;
+        status|get|"")
+            if [ -f "$CONF_DIR/no-auto-eco" ]; then
+                echo "disabled (opted out via no-auto-eco)"
+            else
+                echo "enabled (active on battery)"
+            fi
+            ;;
+        *)
+            die "unknown auto-eco state '$state' (choose 'on', 'off', or 'status')"
+            ;;
+    esac
+}
+
 # Parse flags and arguments
 NOTIFY=0
 ARGS=()
@@ -202,6 +231,10 @@ case "$subcmd" in
     eco)
         state="${ARGS[1]:-on}"
         set_eco "$state" "$NOTIFY"
+        ;;
+    auto|auto-eco|auto-power)
+        state="${ARGS[1]:-status}"
+        set_auto_eco "$state"
         ;;
     frosted|transparent|solid)
         set_mode "$subcmd" "$NOTIFY"
