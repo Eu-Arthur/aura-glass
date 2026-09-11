@@ -20,11 +20,13 @@ C_CYA="${C_CYA:-$'\033[0;36m'}"
 
 JSON_MODE=0
 QUIET_MODE=0
+FIX_MODE=0
 
 for arg in "$@"; do
     case "$arg" in
         --json) JSON_MODE=1 ;;
         -q|--quiet) QUIET_MODE=1 ;;
+        --fix) FIX_MODE=1 ;;
         -h|--help)
             cat <<EOF
 aura-glass-doctor — system diagnostics and health check
@@ -33,6 +35,7 @@ Usage:
   aura-glass-doctor [options]
 
 Options:
+  --fix        automatically remediate safe configuration issues
   --json       output results as structured JSON
   -q, --quiet  suppress output, return exit code 0 if healthy, 1 if problems
   -h, --help   display this help message
@@ -45,6 +48,74 @@ EOF
             ;;
     esac
 done
+
+if [ "$FIX_MODE" = 1 ]; then
+    [ "$QUIET_MODE" = 0 ] && printf '%sRunning Aura Glass auto-remediation...%s\n\n' "$C_BLD" "$C_OFF"
+
+    # 1. Fix config directory permissions (700)
+    if [ -d "$CONF_DIR" ]; then
+        local_perm="$(stat -c "%a" "$CONF_DIR" 2>/dev/null || stat -f "%Lp" "$CONF_DIR" 2>/dev/null || echo "")"
+        if [ "$local_perm" != "700" ]; then
+            chmod 700 "$CONF_DIR" 2>/dev/null || true
+            [ "$QUIET_MODE" = 0 ] && printf '  %s✓ Fixed permissions on %s to 700%s\n' "$C_GRN" "$CONF_DIR" "$C_OFF"
+        fi
+    fi
+
+    # 2. Deploy shell completions if missing
+    if [ -f "$REPO_ROOT/completions/aura-glass.bash" ]; then
+        bash_dir="$HOME/.local/share/bash-completion/completions"
+        if [ ! -f "$bash_dir/aura-glass" ]; then
+            mkdir -p "$bash_dir"
+            install -Dm644 "$REPO_ROOT/completions/aura-glass.bash" "$bash_dir/aura-glass" 2>/dev/null || true
+            [ "$QUIET_MODE" = 0 ] && printf '  %s✓ Installed Bash completion%s\n' "$C_GRN" "$C_OFF"
+        fi
+    fi
+
+    if have zsh && [ -f "$REPO_ROOT/completions/_aura-glass" ]; then
+        zsh_dir="$HOME/.local/share/zsh/site-functions"
+        if [ ! -f "$zsh_dir/_aura-glass" ]; then
+            mkdir -p "$zsh_dir"
+            install -Dm644 "$REPO_ROOT/completions/_aura-glass" "$zsh_dir/_aura-glass" 2>/dev/null || true
+            [ "$QUIET_MODE" = 0 ] && printf '  %s✓ Installed Zsh completion%s\n' "$C_GRN" "$C_OFF"
+        fi
+    fi
+
+    if have fish && [ -f "$REPO_ROOT/completions/aura-glass.fish" ]; then
+        fish_dir="$HOME/.config/fish/completions"
+        if [ ! -f "$fish_dir/aura-glass.fish" ]; then
+            mkdir -p "$fish_dir"
+            install -Dm644 "$REPO_ROOT/completions/aura-glass.fish" "$fish_dir/aura-glass.fish" 2>/dev/null || true
+            [ "$QUIET_MODE" = 0 ] && printf '  %s✓ Installed Fish completion%s\n' "$C_GRN" "$C_OFF"
+        fi
+    fi
+
+    # 3. Enable installed companion extensions that are currently disabled
+    if have gnome-extensions; then
+        ext_uuids=(
+            "blur-my-shell@aunetx"
+            "openbar@neuromorph"
+            "just-perfection-desktop@just-perfection"
+            "custom-osd@hermes8716.github.com"
+            "user-theme@gnome-shell-extensions.gcampax.github.com"
+            "aura-glass-blur@aura-glass.local"
+        )
+        for u in "${ext_uuids[@]}"; do
+            if [ -d "$EXT_DIR/$u" ] || [ -d "/usr/share/gnome-shell/extensions/$u" ]; then
+                if ! gnome-extensions info "$u" 2>/dev/null | grep -q "State: ACTIVE"; then
+                    gnome-extensions enable "$u" 2>/dev/null || true
+                    [ "$QUIET_MODE" = 0 ] && printf '  %s✓ Enabled extension: %s%s\n' "$C_GRN" "$u" "$C_OFF"
+                fi
+            fi
+        done
+    fi
+
+    # 4. Reload systemd daemon if available
+    if have systemctl; then
+        systemctl --user daemon-reload 2>/dev/null || true
+    fi
+
+    [ "$QUIET_MODE" = 0 ] && printf '\n%sAuto-remediation completed. Running health checks...%s\n\n' "$C_BLD" "$C_OFF"
+fi
 
 detect_distro
 

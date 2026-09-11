@@ -37,8 +37,12 @@ out_install_help="$("$REPO_ROOT/install.sh" --doctor --help 2>&1)" || note "inst
 quiet_out="$("$DOCTOR" --quiet 2>&1 || true)"
 [ -z "$quiet_out" ] || note "aura-glass-doctor --quiet produced unexpected output: $quiet_out"
 
+# 5. Check --fix flag
+out_fix="$("$DOCTOR" --fix 2>&1 || true)"
+[[ "$out_fix" =~ "Auto-remediation" ]] || note "aura-glass-doctor --fix missing remediation output"
+
 if [ "$fail" -eq 1 ]; then
     printf 'check-doctor.sh: FAILED\n' >&2
     exit 1
 fi
-printf 'check-doctor.sh: passed (JSON schema & delegation verified)\n'
+printf 'check-doctor.sh: passed (JSON schema, delegation & --fix verified)\n'

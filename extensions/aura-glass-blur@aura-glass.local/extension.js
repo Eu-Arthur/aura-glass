@@ -1110,12 +1110,6 @@ export default class AuraGlassBlurExtension extends Extension {
         this._bgDarkChangedId = 0;
         this._gdmSyncTimer = 0;
 
-        const hasGdm = GLib.find_program_in_path('gdm') ||
-                       GLib.find_program_in_path('gdm3') ||
-                       GLib.file_test('/usr/sbin/gdm3', GLib.FileTest.EXISTS);
-        if (!hasGdm)
-            return;
-
         try {
             this._bgSettings = new Gio.Settings({
                 schema_id: 'org.gnome.desktop.background',
@@ -1138,12 +1132,32 @@ export default class AuraGlassBlurExtension extends Extension {
         this._gdmSyncTimer = GLib.timeout_add_seconds(
             GLib.PRIORITY_DEFAULT, 4, () => {
                 this._gdmSyncTimer = 0;
-                try {
-                    Gio.Subprocess.new(
-                        ['aura-glass-gdm-sync'],
-                        Gio.SubprocessFlags.NONE
-                    );
-                } catch (_) {}
+
+                // 1. Sync GDM lockscreen if GDM is present
+                const hasGdm = GLib.find_program_in_path('gdm') ||
+                               GLib.find_program_in_path('gdm3') ||
+                               GLib.file_test('/usr/sbin/gdm3', GLib.FileTest.EXISTS);
+                if (hasGdm) {
+                    try {
+                        Gio.Subprocess.new(
+                            ['aura-glass-gdm-sync'],
+                            Gio.SubprocessFlags.NONE
+                        );
+                    } catch (_) {}
+                }
+
+                // 2. Auto-adapt accent if accent-from-wallpaper is set
+                const confDir = GLib.build_filenamev([GLib.get_user_config_dir(), 'aura-glass']);
+                const marker = GLib.build_filenamev([confDir, 'accent-from-wallpaper']);
+                if (GLib.file_test(marker, GLib.FileTest.EXISTS)) {
+                    try {
+                        Gio.Subprocess.new(
+                            ['aura-glass', 'accent', 'auto'],
+                            Gio.SubprocessFlags.NONE
+                        );
+                    } catch (_) {}
+                }
+
                 return GLib.SOURCE_REMOVE;
             });
     }

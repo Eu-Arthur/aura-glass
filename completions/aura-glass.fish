@@ -82,6 +82,7 @@ end
 
 # Diagnostic doctor
 complete -c aura-glass-doctor -f
+complete -c aura-glass-doctor -l fix -d "Automatically remediate safe configuration issues"
 complete -c aura-glass-doctor -l json -d "JSON output"
 complete -c aura-glass-doctor -s q -l quiet -d "Quiet output"
 complete -c aura-glass-doctor -s h -l help -d "Show help"

@@ -113,7 +113,7 @@ _aura_glass_ext() {
 _aura_glass_doctor() {
     local cur="${COMP_WORDS[COMP_CWORD]}"
     if [[ "$cur" == -* ]]; then
-        COMPREPLY=( $(compgen -W "--json --quiet -q --help -h" -- "$cur") )
+        COMPREPLY=( $(compgen -W "--json --quiet -q --fix --help -h" -- "$cur") )
         return 0
     fi
 }

@@ -99,6 +99,7 @@ _aura_glass_ext() {
 
 _aura_glass_doctor() {
     _arguments -s \
+        '--fix[Automatically remediate safe configuration issues]' \
         '--json[Output diagnostic results in JSON format]' \
         '(-q --quiet)'{-q,--quiet}'[Suppress non-essential output]' \
         '(-h --help)'{-h,--help}'[Show help and diagnostics overview]'
@@ -218,6 +219,7 @@ _aura_glass() {
             ;;
         doctor)
             _arguments -s \
+                '--fix[Automatically remediate safe configuration issues]' \
                 '--json[Output results as structured JSON]' \
                 '(-q --quiet)'{-q,--quiet}'[Suppress output, exit code only]' \
                 '(-h --help)'{-h,--help}'[Show doctor help]'
