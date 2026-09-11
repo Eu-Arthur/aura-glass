@@ -1,4 +1,5 @@
 # shellcheck shell=bash
+# shellcheck disable=SC2207
 # bash/zsh completion for aura-glass scripts and commands
 
 if [ -n "${ZSH_VERSION:-}" ]; then
@@ -264,13 +265,112 @@ _aura_glass_browser() {
     COMPREPLY=( $(compgen -W "$subcmds" -- "$cur") )
 }
 
+_aura_glass_wallpaper() {
+    local cur prev subcmds opts
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+    subcmds="generate apply current -h --help"
+
+    case "$prev" in
+        --accent)
+            COMPREPLY=( $(compgen -W "blue teal green yellow orange red pink purple slate" -- "$cur") )
+            return 0
+            ;;
+        apply)
+            compopt -o default 2>/dev/null || true
+            return 0
+            ;;
+    esac
+
+    if [ "$COMP_CWORD" -eq 1 ] || { [ "${COMP_WORDS[1]}" = "wallpaper" ] && [ "$COMP_CWORD" -eq 2 ]; }; then
+        COMPREPLY=( $(compgen -W "$subcmds" -- "$cur") )
+        return 0
+    fi
+
+    opts="--mesh --aurora --obsidian --accent --width --height --output --apply -h --help"
+    if [[ "$cur" == -* ]]; then
+        COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
+        return 0
+    fi
+}
+
+_aura_glass_glow() {
+    local cur prev subcmds
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+    subcmds="status on off toggle -h --help"
+
+    case "$prev" in
+        --style)
+            COMPREPLY=( $(compgen -W "subtle accent neon" -- "$cur") )
+            return 0
+            ;;
+    esac
+
+    if [ "$COMP_CWORD" -eq 1 ] || { [ "${COMP_WORDS[1]}" = "glow" ] && [ "$COMP_CWORD" -eq 2 ]; }; then
+        COMPREPLY=( $(compgen -W "$subcmds" -- "$cur") )
+        return 0
+    fi
+
+    if [ "$prev" = "on" ]; then
+        COMPREPLY=( $(compgen -W "--style -h --help" -- "$cur") )
+        return 0
+    fi
+}
+
+_aura_glass_sound() {
+    local cur prev subcmds
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+    subcmds="status enable disable preview -h --help"
+
+    case "$prev" in
+        preview)
+            COMPREPLY=( $(compgen -W "bell screen-capture window-tile volume" -- "$cur") )
+            return 0
+            ;;
+    esac
+
+    if [ "$COMP_CWORD" -eq 1 ] || { [ "${COMP_WORDS[1]}" = "sound" ] && [ "$COMP_CWORD" -eq 2 ]; }; then
+        COMPREPLY=( $(compgen -W "$subcmds" -- "$cur") )
+        return 0
+    fi
+}
+
+_aura_glass_apps() {
+    local cur prev subcmds
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+    subcmds="status apply revert snippet -h --help"
+
+    case "$prev" in
+        apply|revert)
+            COMPREPLY=( $(compgen -W "vscode obsidian all" -- "$cur") )
+            return 0
+            ;;
+        snippet)
+            COMPREPLY=( $(compgen -W "vscode obsidian" -- "$cur") )
+            return 0
+            ;;
+    esac
+
+    if [ "$COMP_CWORD" -eq 1 ] || { [ "${COMP_WORDS[1]}" = "apps" ] && [ "$COMP_CWORD" -eq 2 ]; }; then
+        COMPREPLY=( $(compgen -W "$subcmds" -- "$cur") )
+        return 0
+    fi
+}
+
 _aura_glass_main() {
     local cur prev subcmds
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    subcmds="status profile mode accent adaptive shortcut bench browser terminal daemon doctor settings backup apply gdm update ext preview version help"
+    subcmds="status profile mode accent adaptive shortcut bench browser terminal daemon doctor settings backup apply gdm update wallpaper glow sound apps ext preview version help"
 
     if [ "$COMP_CWORD" -eq 1 ]; then
         COMPREPLY=( $(compgen -W "$subcmds -h --help -v --version" -- "$cur") )
@@ -318,6 +418,18 @@ _aura_glass_main() {
         backup)
             _aura_glass_backup
             ;;
+        wallpaper|wallpapers)
+            _aura_glass_wallpaper
+            ;;
+        glow)
+            _aura_glass_glow
+            ;;
+        sound|sounds)
+            _aura_glass_sound
+            ;;
+        apps|app)
+            _aura_glass_apps
+            ;;
         ext)
             _aura_glass_ext
             ;;
@@ -340,6 +452,10 @@ complete -F _aura_glass_terminal aura-glass-terminal ./bin/aura-glass-terminal b
 complete -F _aura_glass_adaptive aura-glass-adaptive ./bin/aura-glass-adaptive bin/aura-glass-adaptive
 complete -F _aura_glass_bench aura-glass-bench ./bin/aura-glass-bench bin/aura-glass-bench
 complete -F _aura_glass_browser aura-glass-browser ./bin/aura-glass-browser bin/aura-glass-browser
+complete -F _aura_glass_wallpaper aura-glass-wallpaper ./bin/aura-glass-wallpaper bin/aura-glass-wallpaper
+complete -F _aura_glass_glow aura-glass-glow ./bin/aura-glass-glow bin/aura-glass-glow
+complete -F _aura_glass_sound aura-glass-sound ./bin/aura-glass-sound bin/aura-glass-sound
+complete -F _aura_glass_apps aura-glass-apps ./bin/aura-glass-apps bin/aura-glass-apps
 complete -F _aura_glass_main aura-glass ./bin/aura-glass bin/aura-glass
 
 

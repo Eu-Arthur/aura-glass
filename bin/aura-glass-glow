@@ -1,0 +1,183 @@
+#!/usr/bin/env bash
+# aura-glass-glow — specular rim light & active window focus highlighting.
+set -euo pipefail
+
+CONF_DIR="${AURA_GLASS_CONF:-${AURA_GLASS_DIR:-${TAHOE_GLASS_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/aura-glass}}}"
+[ -d "$CONF_DIR" ] || [ ! -d "${XDG_CONFIG_HOME:-$HOME/.config}/tahoe-glass" ] || CONF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/tahoe-glass"
+
+GLOW_FILE="$CONF_DIR/glow"
+GTK4_GLOW="$CONF_DIR/gtk4-glow.css"
+GTK3_GLOW="$CONF_DIR/gtk3-glow.css"
+
+C_BLD=$'\033[1m'
+C_CYA=$'\033[1;36m'
+C_GRN=$'\033[1;32m'
+C_YEL=$'\033[1;33m'
+C_DIM=$'\033[2m'
+C_OFF=$'\033[0m'
+
+usage() {
+    cat <<'EOF'
+aura-glass-glow — active window specular rim light & focus halo manager
+
+USAGE:
+    aura-glass glow status
+    aura-glass glow on [--style subtle | accent | neon]
+    aura-glass glow off
+    aura-glass glow toggle
+    aura-glass glow -h | --help
+
+STYLES:
+    subtle   Delicate 1px specular inner rim with soft 8px ambient glow (default)
+    accent   Vibrant 1.5px specular rim with 16px radiant accent glow
+    neon     High-contrast 2px specular border with 24px vivid visionOS aura
+EOF
+}
+
+die() { printf 'error: %s\n' "$*" >&2; exit 1; }
+ok()  { printf '✓ %s\n' "$*"; }
+
+get_accent_rgb() {
+    local acc="blue"
+    if [ -r "$CONF_DIR/accent" ]; then
+        acc="$(head -n 1 "$CONF_DIR/accent" 2>/dev/null || echo "blue")"
+    fi
+
+    case "$acc" in
+        purple) echo "145, 65, 172" ;;
+        blue)   echo "53, 132, 228" ;;
+        teal)   echo "33, 144, 164" ;;
+        green)  echo "58, 148, 74" ;;
+        yellow) echo "200, 136, 0" ;;
+        orange) echo "237, 91, 0" ;;
+        red)    echo "230, 45, 66" ;;
+        pink)   echo "213, 97, 153" ;;
+        slate)  echo "111, 131, 150" ;;
+        *)      echo "53, 132, 228" ;;
+    esac
+}
+
+generate_glow_css() {
+    local style="${1:-subtle}"
+    local rgb
+    rgb="$(get_accent_rgb)"
+
+    local shadow_rule=""
+    case "$style" in
+        neon)
+            shadow_rule="0 0 0 2px rgba(255, 255, 255, 0.40), 0 0 24px 4px rgba($rgb, 0.60), 0 0 48px 8px rgba($rgb, 0.25)"
+            ;;
+        accent)
+            shadow_rule="0 0 0 1.5px rgba(255, 255, 255, 0.30), 0 0 16px 3px rgba($rgb, 0.38)"
+            ;;
+        subtle|*)
+            shadow_rule="0 0 0 1px rgba(255, 255, 255, 0.22), 0 0 8px 1px rgba($rgb, 0.20)"
+            ;;
+    esac
+
+    cat <<EOF
+/* ==========================================================================
+   Aura Glass — Specular Rim Light & Window Focus ($style)
+   ========================================================================== */
+
+/* Active window specular rim and radiant focus glow */
+window:focus,
+window.background:focus,
+window.csd:focus,
+decoration:focus,
+.titlebar:focus {
+  box-shadow: $shadow_rule !important;
+  transition: box-shadow 0.22s ease-out, opacity 0.22s ease-out !important;
+}
+
+/* Inactive window softer contrast hierarchy */
+window:not(:focus):not(:active),
+window.background:not(:focus):not(:active),
+decoration:not(:focus):not(:active) {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 8px 24px rgba(0, 0, 0, 0.35) !important;
+  opacity: 0.96 !important;
+}
+EOF
+}
+
+cmd_status() {
+    printf '%sWindow Specular Glow & Focus Highlighting:%s\n\n' "$C_BLD" "$C_OFF"
+
+    local is_enabled="${C_DIM}disabled (off)${C_OFF}"
+    local style="subtle"
+    if [ -f "$GLOW_FILE" ]; then
+        style="$(head -n 1 "$GLOW_FILE" 2>/dev/null || echo "subtle")"
+        is_enabled="${C_GRN}enabled ($style style)${C_OFF}"
+    fi
+
+    printf '  Status:         %s\n' "$is_enabled"
+    printf '  Active Style:   %s%s%s\n' "$C_CYA" "$style" "$C_OFF"
+    printf '  Accent RGB:     %s\n' "$(get_accent_rgb)"
+
+    if [ -f "$GTK4_GLOW" ]; then
+        printf '  Stylesheet:     %s%s%s\n' "$C_DIM" "$GTK4_GLOW" "$C_OFF"
+    fi
+}
+
+cmd_on() {
+    local style="subtle"
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --style)
+                style="${2:-subtle}"
+                shift 2
+                ;;
+            subtle|accent|neon)
+                style="$1"
+                shift
+                ;;
+            *) shift ;;
+        esac
+    done
+
+    mkdir -p "$CONF_DIR"
+    printf '%s\n' "$style" > "$GLOW_FILE"
+
+    local css_content
+    css_content="$(generate_glow_css "$style")"
+    printf '%s\n' "$css_content" > "$GTK4_GLOW"
+    printf '%s\n' "$css_content" > "$GTK3_GLOW"
+
+    if command -v aura-glass-apply >/dev/null 2>&1; then
+        aura-glass-apply >/dev/null 2>&1 || true
+    fi
+
+    ok "Window specular glow enabled ($style style)."
+}
+
+cmd_off() {
+    rm -f "$GLOW_FILE" "$GTK4_GLOW" "$GTK3_GLOW"
+    if command -v aura-glass-apply >/dev/null 2>&1; then
+        aura-glass-apply >/dev/null 2>&1 || true
+    fi
+    ok "Window specular glow disabled."
+}
+
+cmd_toggle() {
+    if [ -f "$GLOW_FILE" ]; then
+        cmd_off
+    else
+        cmd_on "subtle"
+    fi
+}
+
+main() {
+    local action="${1:-status}"
+    shift || true
+
+    case "$action" in
+        status) cmd_status ;;
+        on|enable) cmd_on "$@" ;;
+        off|disable) cmd_off ;;
+        toggle) cmd_toggle ;;
+        -h|--help|help) usage ;;
+        *) die "unknown action '$action'. Run 'aura-glass glow --help' for usage." ;;
+    esac
+}
+
+main "$@"

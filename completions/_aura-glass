@@ -1,4 +1,4 @@
-#compdef aura-glass install.sh uninstall.sh aura-glass-apply aura-glass-ext aura-glass-doctor aura-glass-update-check aura-glass-backup aura-glass-mode aura-glass-profile aura-glass-daemon aura-glass-terminal aura-glass-adaptive aura-glass-bench aura-glass-browser
+#compdef aura-glass install.sh uninstall.sh aura-glass-apply aura-glass-ext aura-glass-doctor aura-glass-update-check aura-glass-backup aura-glass-mode aura-glass-profile aura-glass-daemon aura-glass-terminal aura-glass-adaptive aura-glass-bench aura-glass-browser aura-glass-wallpaper aura-glass-glow aura-glass-sound aura-glass-apps
 
 # Zsh completion for Aura Glass suite
 
@@ -189,6 +189,10 @@ _aura_glass() {
         'apply:Re-splice CSS stylesheets and refresh active theme'
         'gdm:Sync desktop wallpaper and primary monitor to GDM'
         'update:Check for newer aura-glass release'
+        'wallpaper:Procedural 4K mesh gradient & wallpaper generator'
+        'glow:Active window specular rim light & focus halo'
+        'sound:Tactile glass acoustic feedback & sound theme'
+        'apps:Frosted glass theming for VS Code & Obsidian'
         'ext:Inspect and manage companion GNOME Shell extensions'
         'version:Print version information'
         'help:Show usage help'
@@ -277,6 +281,37 @@ _aura_glass() {
         apply)
             _aura_glass_install
             ;;
+        wallpaper|wallpapers)
+            _arguments -s \
+                '1:wallpaper action:(generate apply current)' \
+                '--mesh[Generate multi-point mesh gradient]' \
+                '--aurora[Generate luminous aurora borealis]' \
+                '--obsidian[Generate dark obsidian glass]' \
+                '--accent[Accent color]:accent:(blue teal green yellow orange red pink purple slate)' \
+                '--width[Width in pixels]:width:(1920 2560 3840 5120)' \
+                '--height[Height in pixels]:height:(1080 1440 2160 2880)' \
+                '--output[Output file path]:output file:_files' \
+                '--apply[Apply generated wallpaper immediately]' \
+                '(-h --help)'{-h,--help}'[Show wallpaper help]'
+            ;;
+        glow)
+            _arguments -s \
+                '1:glow action:(status on off toggle)' \
+                '--style[Glow aesthetic preset]:style:(subtle accent neon)' \
+                '(-h --help)'{-h,--help}'[Show glow help]'
+            ;;
+        sound|sounds)
+            _arguments -s \
+                '1:sound action:(status enable disable preview)' \
+                '2:sound preview:(bell screen-capture window-tile volume)' \
+                '(-h --help)'{-h,--help}'[Show sound help]'
+            ;;
+        apps|app)
+            _arguments -s \
+                '1:apps action:(status apply revert snippet)' \
+                '2:target:(vscode obsidian all)' \
+                '(-h --help)'{-h,--help}'[Show apps help]'
+            ;;
         gdm)
             _arguments -s '1:gdm action:(sync)' '(-h --help)'{-h,--help}'[Show GDM help]'
             ;;
@@ -326,6 +361,37 @@ case "${words[1]:t}" in
         ;;
     aura-glass-browser)
         _arguments -s '1:browser action:(status firefox snippet)' '2:action:(enable disable sync status snippet)' '(-h --help)'{-h,--help}'[Show browser help]'
+        ;;
+    aura-glass-wallpaper)
+        _arguments -s \
+            '1:wallpaper action:(generate apply current)' \
+            '--mesh[Generate multi-point mesh gradient]' \
+            '--aurora[Generate luminous aurora borealis]' \
+            '--obsidian[Generate dark obsidian glass]' \
+            '--accent[Accent color]:accent:(blue teal green yellow orange red pink purple slate)' \
+            '--width[Width in pixels]:width:(1920 2560 3840 5120)' \
+            '--height[Height in pixels]:height:(1080 1440 2160 2880)' \
+            '--output[Output file path]:output file:_files' \
+            '--apply[Apply generated wallpaper immediately]' \
+            '(-h --help)'{-h,--help}'[Show wallpaper help]'
+        ;;
+    aura-glass-glow)
+        _arguments -s \
+            '1:glow action:(status on off toggle)' \
+            '--style[Glow aesthetic preset]:style:(subtle accent neon)' \
+            '(-h --help)'{-h,--help}'[Show glow help]'
+        ;;
+    aura-glass-sound)
+        _arguments -s \
+            '1:sound action:(status enable disable preview)' \
+            '2:sound preview:(bell screen-capture window-tile volume)' \
+            '(-h --help)'{-h,--help}'[Show sound help]'
+        ;;
+    aura-glass-apps)
+        _arguments -s \
+            '1:apps action:(status apply revert snippet)' \
+            '2:target:(vscode obsidian all)' \
+            '(-h --help)'{-h,--help}'[Show apps help]'
         ;;
     aura-glass-update-check)
         _aura_glass_update_check

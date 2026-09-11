@@ -1,0 +1,338 @@
+#!/usr/bin/env bash
+# aura-glass-apps — frosted glass styling integration for VS Code and Obsidian.
+set -euo pipefail
+
+CONF_DIR="${AURA_GLASS_CONF:-${AURA_GLASS_DIR:-${TAHOE_GLASS_DIR:-$HOME/.config/aura-glass}}}"
+[ -d "$CONF_DIR" ] || [ ! -d "$HOME/.config/tahoe-glass" ] || CONF_DIR="$HOME/.config/tahoe-glass"
+
+C_BLD=$'\033[1m'
+C_CYA=$'\033[1;36m'
+C_GRN=$'\033[1;32m'
+C_YEL=$'\033[1;33m'
+C_DIM=$'\033[2m'
+C_OFF=$'\033[0m'
+
+usage() {
+    cat <<'EOF'
+aura-glass-apps — frosted glass theme integration for Electron and Notes apps
+
+USAGE:
+    aura-glass apps status
+    aura-glass apps apply <vscode | obsidian | all>
+    aura-glass apps revert <vscode | obsidian | all>
+    aura-glass apps snippet <vscode | obsidian>
+    aura-glass apps -h | --help
+
+SUPPORTED APPLICATIONS:
+    vscode      Visual Studio Code, VSCodium, and Cursor IDEs
+    obsidian    Obsidian Knowledge Base & Markdown editor
+EOF
+}
+
+die() { printf 'error: %s\n' "$*" >&2; exit 1; }
+ok()  { printf '✓ %s\n' "$*"; }
+
+get_accent_hex() {
+    local acc="blue"
+    if [ -r "$CONF_DIR/accent" ]; then
+        acc="$(head -n 1 "$CONF_DIR/accent" 2>/dev/null || echo "blue")"
+    fi
+
+    case "$acc" in
+        purple) echo "#9141ac" ;;
+        blue)   echo "#3584e4" ;;
+        teal)   echo "#2190a4" ;;
+        green)  echo "#3a944a" ;;
+        yellow) echo "#c88800" ;;
+        orange) echo "#ed5b00" ;;
+        red)    echo "#e62d42" ;;
+        pink)   echo "#d56199" ;;
+        slate)  echo "#6f8396" ;;
+        *)
+            if [[ "$acc" =~ ^#[0-9a-fA-F]{6}$ ]]; then
+                echo "$acc"
+            else
+                echo "#3584e4"
+            fi
+            ;;
+    esac
+}
+
+get_vscode_snippet() {
+    local hex
+    hex="$(get_accent_hex)"
+    cat <<EOF
+{
+  "workbench.colorCustomizations": {
+    "titleBar.activeBackground": "#1c1f2ad0",
+    "titleBar.inactiveBackground": "#161822a0",
+    "activityBar.background": "#141720e0",
+    "statusBar.background": "${hex}d5",
+    "statusBar.noFolderBackground": "${hex}b0",
+    "focusBorder": "$hex",
+    "menu.background": "#1c1f2ae8",
+    "editorGroupHeader.tabsBackground": "#181a24d0",
+    "tab.activeBackground": "#222634e0",
+    "tab.inactiveBackground": "#181a2490"
+  }
+}
+EOF
+}
+
+get_obsidian_snippet() {
+    local hex
+    hex="$(get_accent_hex)"
+    cat <<EOF
+/* ==========================================================================
+   Aura Glass — Frosted Glass Snippet for Obsidian
+   ========================================================================== */
+
+:root {
+  --aura-glass-accent: $hex;
+  --titlebar-background: rgba(22, 25, 34, 0.75) !important;
+  --nav-item-color-active: var(--aura-glass-accent);
+}
+
+.app-container,
+.workspace-ribbon,
+.workspace-split.mod-left-split,
+.workspace-split.mod-right-split {
+  background-color: rgba(20, 23, 32, 0.75) !important;
+  backdrop-filter: blur(20px) saturate(130%) !important;
+}
+
+.workspace-leaf-content[data-type="markdown"] {
+  background-color: rgba(26, 29, 40, 0.88) !important;
+}
+
+.mod-active .workspace-tab-header.is-active {
+  border-bottom: 2px solid var(--aura-glass-accent) !important;
+}
+
+.nav-file-title.is-active,
+.nav-folder-title.is-active {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+  border-left: 2px solid var(--aura-glass-accent) !important;
+}
+EOF
+}
+
+apply_vscode() {
+    local hex
+    hex="$(get_accent_hex)"
+    local count=0
+
+    local config_dirs=(
+        "${XDG_CONFIG_HOME:-$HOME/.config}/Code/User"
+        "${XDG_CONFIG_HOME:-$HOME/.config}/VSCodium/User"
+        "${XDG_CONFIG_HOME:-$HOME/.config}/Cursor/User"
+    )
+
+    for dir in "${config_dirs[@]}"; do
+        [ -d "$dir" ] || continue
+        local settings="$dir/settings.json"
+        mkdir -p "$dir"
+
+        if [ -f "$settings" ] && [ ! -f "$settings.aurabackup" ]; then
+            cp -f "$settings" "$settings.aurabackup"
+        fi
+
+        python3 -c "
+import json, os
+
+path = '$settings'
+data = {}
+if os.path.exists(path):
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except Exception:
+        pass
+
+cc = data.get('workbench.colorCustomizations', {})
+cc.update({
+    'titleBar.activeBackground': '#1c1f2ad0',
+    'titleBar.inactiveBackground': '#161822a0',
+    'activityBar.background': '#141720e0',
+    'statusBar.background': '${hex}d5',
+    'statusBar.noFolderBackground': '${hex}b0',
+    'focusBorder': '$hex',
+    'menu.background': '#1c1f2ae8',
+    'editorGroupHeader.tabsBackground': '#181a24d0',
+    'tab.activeBackground': '#222634e0',
+    'tab.inactiveBackground': '#181a2490'
+})
+data['workbench.colorCustomizations'] = cc
+
+with open(path, 'w', encoding='utf-8') as f:
+    json.dump(data, f, indent=2)
+"
+        count=$((count + 1))
+    done
+
+    if [ "$count" -gt 0 ]; then
+        ok "Applied frosted glass styling to $count VS Code environment(s)."
+    else
+        printf '%sNo VS Code / VSCodium configuration directory found.%s\n' "$C_YEL" "$C_OFF"
+    fi
+}
+
+revert_vscode() {
+    local count=0
+    local config_dirs=(
+        "${XDG_CONFIG_HOME:-$HOME/.config}/Code/User"
+        "${XDG_CONFIG_HOME:-$HOME/.config}/VSCodium/User"
+        "${XDG_CONFIG_HOME:-$HOME/.config}/Cursor/User"
+    )
+
+    for dir in "${config_dirs[@]}"; do
+        local settings="$dir/settings.json"
+        if [ -f "$settings.aurabackup" ]; then
+            mv -f "$settings.aurabackup" "$settings"
+            count=$((count + 1))
+        fi
+    done
+    ok "Reverted $count VS Code environment(s)."
+}
+
+apply_obsidian() {
+    local snippet_content
+    snippet_content="$(get_obsidian_snippet)"
+    local count=0
+
+    local vault_roots=(
+        "$HOME/Documents"
+        "$HOME/Notes"
+        "$HOME/Obsidian"
+        "${AURA_GLASS_VAULT_DIR:-}"
+    )
+
+    for root in "${vault_roots[@]}"; do
+        if [ -z "$root" ] || [ ! -d "$root" ]; then
+            continue
+        fi
+        # Find directories with .obsidian
+        while IFS= read -r -d '' obs_dir; do
+            local snip_dir="$obs_dir/snippets"
+            mkdir -p "$snip_dir"
+            local snip_file="$snip_dir/aura-glass.css"
+            printf '%s\n' "$snippet_content" > "$snip_file"
+
+            # Enable snippet in app.json if present
+            local app_json="$obs_dir/app.json"
+            if [ -f "$app_json" ]; then
+                python3 -c "
+import json
+try:
+    with open('$app_json', 'r', encoding='utf-8') as f:
+        d = json.load(f)
+    snips = d.get('enabledCssSnippets', [])
+    if 'aura-glass' not in snips:
+        snips.append('aura-glass')
+        d['enabledCssSnippets'] = snips
+        with open('$app_json', 'w', encoding='utf-8') as f:
+            json.dump(d, f, indent=2)
+except Exception:
+    pass
+"
+            fi
+            count=$((count + 1))
+        done < <(find "$root" -maxdepth 3 -type d -name ".obsidian" -print0 2>/dev/null || true)
+    done
+
+    if [ "$count" -gt 0 ]; then
+        ok "Installed Aura Glass snippet in $count Obsidian vault(s)."
+    else
+        printf '%sNo Obsidian vaults found in ~/Documents or ~/Notes.%s\n' "$C_YEL" "$C_OFF"
+        printf 'You can manually install with "aura-glass apps snippet obsidian".\n'
+    fi
+}
+
+revert_obsidian() {
+    local count=0
+    local vault_roots=(
+        "$HOME/Documents"
+        "$HOME/Notes"
+        "$HOME/Obsidian"
+        "${AURA_GLASS_VAULT_DIR:-}"
+    )
+
+    for root in "${vault_roots[@]}"; do
+        if [ -z "$root" ] || [ ! -d "$root" ]; then
+            continue
+        fi
+        while IFS= read -r -d '' obs_dir; do
+            local snip_file="$obs_dir/snippets/aura-glass.css"
+            if [ -f "$snip_file" ]; then
+                rm -f "$snip_file"
+                count=$((count + 1))
+            fi
+        done < <(find "$root" -maxdepth 3 -type d -name ".obsidian" -print0 2>/dev/null || true)
+    done
+    ok "Removed Aura Glass snippet from $count Obsidian vault(s)."
+}
+
+cmd_status() {
+    printf '%sElectron & Productivity Apps Glass Status:%s\n\n' "$C_BLD" "$C_OFF"
+
+    # VS Code
+    local vsc_detected="${C_DIM}no${C_OFF}"
+    local vsc_styled="${C_DIM}no${C_OFF}"
+    local vsc_path="${XDG_CONFIG_HOME:-$HOME/.config}/Code/User/settings.json"
+    if [ -d "$(dirname "$vsc_path")" ]; then
+        vsc_detected="${C_GRN}yes${C_OFF}"
+        if [ -f "$vsc_path" ] && grep -q "titleBar.activeBackground" "$vsc_path" 2>/dev/null; then
+            vsc_styled="${C_GRN}styled (glass)${C_OFF}"
+        fi
+    fi
+
+    printf '  %-14s Detected: %-18s Styled: %s\n' "VS Code:" "$vsc_detected" "$vsc_styled"
+
+    # Obsidian
+    local obs_detected="${C_DIM}no${C_OFF}"
+    if [ -d "$HOME/.config/obsidian" ] || [ -d "$HOME/Documents" ]; then
+        obs_detected="${C_GRN}yes${C_OFF}"
+    fi
+    printf '  %-14s Detected: %-18s\n' "Obsidian:" "$obs_detected"
+
+    printf '\n%sRun "aura-glass apps apply <vscode|obsidian|all>" to apply styling.%s\n' "$C_DIM" "$C_OFF"
+}
+
+main() {
+    local action="${1:-status}"
+    shift || true
+
+    case "$action" in
+        status) cmd_status ;;
+        apply)
+            local target="${1:-all}"
+            case "$target" in
+                vscode|code) apply_vscode ;;
+                obsidian) apply_obsidian ;;
+                all) apply_vscode; apply_obsidian ;;
+                *) die "unknown target '$target': use vscode, obsidian, or all" ;;
+            esac
+            ;;
+        revert|disable)
+            local target="${1:-all}"
+            case "$target" in
+                vscode|code) revert_vscode ;;
+                obsidian) revert_obsidian ;;
+                all) revert_vscode; revert_obsidian ;;
+                *) die "unknown target '$target': use vscode, obsidian, or all" ;;
+            esac
+            ;;
+        snippet)
+            local target="${1:-vscode}"
+            case "$target" in
+                vscode|code) get_vscode_snippet ;;
+                obsidian) get_obsidian_snippet ;;
+                *) die "unknown target '$target': use vscode or obsidian" ;;
+            esac
+            ;;
+        -h|--help|help) usage ;;
+        *) die "unknown action '$action'. Run 'aura-glass apps --help' for usage." ;;
+    esac
+}
+
+main "$@"
