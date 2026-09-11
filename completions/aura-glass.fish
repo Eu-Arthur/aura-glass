@@ -82,8 +82,9 @@ complete -c aura-glass-backup -s h -l help -d "Show backup help"
 
 # Mode switcher
 complete -c aura-glass-mode -f
-complete -c aura-glass-mode -n "__fish_use_subcommand" -a "get set toggle frosted transparent solid"
+complete -c aura-glass-mode -n "__fish_use_subcommand" -a "get set toggle eco frosted transparent solid"
 complete -c aura-glass-mode -n "__fish_seen_subcommand_from set" -a "frosted transparent solid"
+complete -c aura-glass-mode -n "__fish_seen_subcommand_from eco" -a "on off"
 complete -c aura-glass-mode -l notify -d "Show desktop notification"
 complete -c aura-glass-mode -s h -l help -d "Show mode help"
 

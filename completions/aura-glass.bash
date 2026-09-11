@@ -146,11 +146,15 @@ _aura_glass_mode() {
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
     modes="frosted transparent solid"
-    subcmds="get set toggle frosted transparent solid --notify -h --help"
+    subcmds="get set toggle eco frosted transparent solid --notify -h --help"
 
     case "$prev" in
         set)
             COMPREPLY=( $(compgen -W "$modes" -- "$cur") )
+            return 0
+            ;;
+        eco)
+            COMPREPLY=( $(compgen -W "on off" -- "$cur") )
             return 0
             ;;
     esac

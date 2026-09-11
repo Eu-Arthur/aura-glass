@@ -102,6 +102,23 @@ else
     fail "Notification not found in notifications.log"
 fi
 
+# 8. Eco mode test
+"$BIN" eco on >/dev/null 2>&1
+CUR="$("$BIN" get)"
+if [ "$CUR" = "transparent" ]; then
+    pass "Eco mode on switches to transparent"
+else
+    fail "Eco mode on failed: current='$CUR'"
+fi
+
+"$BIN" eco off >/dev/null 2>&1
+CUR="$("$BIN" get)"
+if [ "$CUR" = "frosted" ]; then
+    pass "Eco mode off restores frosted"
+else
+    fail "Eco mode off failed: current='$CUR'"
+fi
+
 if [ "$FAILURES" -gt 0 ]; then
     printf '\nFailed %d checks in aura-glass-mode.\n' "$FAILURES" >&2
     exit 1

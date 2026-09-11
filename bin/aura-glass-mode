@@ -20,6 +20,7 @@ USAGE:
     aura-glass-mode set <frosted | transparent | solid>
     aura-glass-mode <frosted | transparent | solid>
     aura-glass-mode toggle
+    aura-glass-mode eco [on | off]
     aura-glass-mode -h | --help
 
 OPTIONS:
@@ -30,6 +31,7 @@ MODES:
     frosted        Blur behind windows and popups (standard macOS/visionOS look)
     transparent    Translucent windows without background blur (lighter on GPU)
     solid          Opaque styling with no transparency or blur
+    eco            Battery saving preset (transparent windows + clipped redraws)
 EOF
 }
 
@@ -143,6 +145,30 @@ toggle_mode() {
     set_mode "$next" "$do_notify"
 }
 
+set_eco() {
+    local state="${1:-on}"
+    local do_notify="${2:-0}"
+    case "$state" in
+        on|1|true)
+            set_mode "transparent" "$do_notify"
+            if command -v dconf >/dev/null 2>&1; then
+                dconf write /org/gnome/shell/extensions/blur-my-shell/hacks-level 1 2>/dev/null || true
+            fi
+            ok "eco mode enabled (transparent windows + clipped redraws)"
+            ;;
+        off|0|false)
+            set_mode "frosted" "$do_notify"
+            if command -v dconf >/dev/null 2>&1; then
+                dconf write /org/gnome/shell/extensions/blur-my-shell/hacks-level 2 2>/dev/null || true
+            fi
+            ok "eco mode disabled (frosted glass restored)"
+            ;;
+        *)
+            die "unknown eco state '$state' (choose 'on' or 'off')"
+            ;;
+    esac
+}
+
 # Parse flags and arguments
 NOTIFY=0
 ARGS=()
@@ -172,6 +198,10 @@ case "$subcmd" in
         ;;
     toggle)
         toggle_mode "$NOTIFY"
+        ;;
+    eco)
+        state="${ARGS[1]:-on}"
+        set_eco "$state" "$NOTIFY"
         ;;
     frosted|transparent|solid)
         set_mode "$subcmd" "$NOTIFY"

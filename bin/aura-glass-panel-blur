@@ -24,7 +24,17 @@ KEY=/org/gnome/shell/extensions/blur-my-shell/panel/blur
 # past mutter's own reconfiguration without being a noticeable wait.
 SETTLE="${AURA_GLASS_BLUR_SETTLE:-${TAHOE_GLASS_BLUR_SETTLE:-3}}"
 
+# If aura-glass-blur extension is active, it handles panel blur rebuilds
+# natively inside GNOME Shell. In that case, yield to avoid duplicate toggles.
+is_handled_by_extension() {
+    command -v gnome-extensions >/dev/null 2>&1 \
+        && gnome-extensions info "aura-glass-blur@aura-glass.local" 2>/dev/null | grep -q "State: ACTIVE"
+}
+
 rebuild() {
+    if is_handled_by_extension; then
+        return 0
+    fi
     # Only meaningful when the panel blur is actually on — otherwise this would
     # switch on a feature the user turned off.
     [ "$(dconf read "$KEY" 2>/dev/null)" = "true" ] || return 0

@@ -42,6 +42,7 @@ import {Extension, gettext as _} from 'resource:///org/gnome/shell/extensions/ex
 
 const BMS_UUID = 'blur-my-shell@aunetx';
 const BMS_SCHEMA_ID = 'org.gnome.shell.extensions.blur-my-shell.applications';
+const BMS_PANEL_SCHEMA_ID = 'org.gnome.shell.extensions.blur-my-shell.panel';
 
 // Pinned back onto the whitelist by every install.sh run (app_blur_pin_allow
 // in lib/steps-dconf.sh) — the same string is duplicated in
@@ -156,12 +157,18 @@ export default class AuraGlassBlurExtension extends Extension {
             Gio.BusType.SESSION, DBUS_NAME, Gio.BusNameOwnerFlags.NONE,
             null, null, null);
 
+        // Lazy window tracking state: initialized empty, activated only on demand
         this._windowsChangedTimer = 0;
-        this._windowCreatedId = global.display.connect('window-created',
-            (_display, window) => this._trackWindow(window));
+        this._trackingExpiryTimer = 0;
+        this._windowCreatedId = 0;
         this._destroyIds = new Map();
-        for (const actor of global.get_window_actors())
-            this._trackWindow(actor.get_meta_window());
+
+        // Native monitor layout watch for Blur My Shell panel blur actor rebuild
+        this._panelBlurTimer = 0;
+        this._panelBlurRestoreTimer = 0;
+        this._monitorsChangedId = Main.layoutManager.connect(
+            'monitors-changed', () => this._schedulePanelBlurRebuild());
+        this._schedulePanelBlurRebuild();
     }
 
     disable() {
@@ -171,18 +178,20 @@ export default class AuraGlassBlurExtension extends Extension {
         }
         this._settings = null;
 
-        if (this._windowsChangedTimer) {
-            GLib.source_remove(this._windowsChangedTimer);
-            this._windowsChangedTimer = 0;
+        this._stopWindowTracking();
+        this._destroyIds = null;
+
+        if (this._monitorsChangedId) {
+            Main.layoutManager.disconnect(this._monitorsChangedId);
+            this._monitorsChangedId = 0;
         }
-        if (this._windowCreatedId) {
-            global.display.disconnect(this._windowCreatedId);
-            this._windowCreatedId = 0;
+        if (this._panelBlurTimer) {
+            GLib.source_remove(this._panelBlurTimer);
+            this._panelBlurTimer = 0;
         }
-        if (this._destroyIds) {
-            for (const [window, id] of this._destroyIds)
-                window.disconnect(id);
-            this._destroyIds = null;
+        if (this._panelBlurRestoreTimer) {
+            GLib.source_remove(this._panelBlurRestoreTimer);
+            this._panelBlurRestoreTimer = 0;
         }
 
         if (this._nameOwnerId) {
@@ -196,14 +205,41 @@ export default class AuraGlassBlurExtension extends Extension {
         _regexCache.clear();
     }
 
-    // Blur My Shell ships its own compiled schema rather than a system one,
+    // Native panel blur rebuild on monitor layout changes: Blur My Shell clips its
+    // panel actor against monitor geometry, which is in flux at login and monitor
+    // plug/unplug. Rebuilds the actor once settled (3s) without external daemons.
+    _schedulePanelBlurRebuild() {
+        if (this._panelBlurTimer) {
+            GLib.source_remove(this._panelBlurTimer);
+            this._panelBlurTimer = 0;
+        }
+
+        this._panelBlurTimer = GLib.timeout_add_seconds(
+            GLib.PRIORITY_DEFAULT, 3, () => {
+                this._panelBlurTimer = 0;
+                const panelSettings = this._openBmsSettings(BMS_PANEL_SCHEMA_ID);
+                if (!panelSettings || !panelSettings.get_boolean('blur'))
+                    return GLib.SOURCE_REMOVE;
+
+                panelSettings.set_boolean('blur', false);
+                this._panelBlurRestoreTimer = GLib.timeout_add(
+                    GLib.PRIORITY_DEFAULT, 200, () => {
+                        this._panelBlurRestoreTimer = 0;
+                        const s = this._openBmsSettings(BMS_PANEL_SCHEMA_ID);
+                        if (s)
+                            s.set_boolean('blur', true);
+                        return GLib.SOURCE_REMOVE;
+                    });
+                return GLib.SOURCE_REMOVE;
+            });
+    }
+
+    // Blur My Shell ships its own compiled schemas rather than a system one,
     // under whichever of these two directories install_bms in
     // lib/steps-extensions.sh put it in — $HOME for the git build this
     // project does by default, /usr/share when a distro package supplied it
-    // instead (ext_supports_shell checks the same two places). `trusted:
-    // false` is exactly what GNOME Shell's own Extension.getSettings() passes
-    // for a schema living in an extension's own directory.
-    _openBmsApplicationsSettings() {
+    // instead.
+    _openBmsSettings(schemaId) {
         const dirs = [
             GLib.build_filenamev([GLib.get_user_data_dir(), 'gnome-shell',
                 'extensions', BMS_UUID, 'schemas']),
@@ -220,11 +256,15 @@ export default class AuraGlassBlurExtension extends Extension {
             } catch (e) {
                 continue;
             }
-            const schema = source.lookup(BMS_SCHEMA_ID, true);
+            const schema = source.lookup(schemaId, true);
             if (schema)
                 return new Gio.Settings({settings_schema: schema});
         }
         return null;
+    }
+
+    _openBmsApplicationsSettings() {
+        return this._openBmsSettings(BMS_SCHEMA_ID);
     }
 
     _appendBlurToggle(menu, window) {
@@ -374,6 +414,7 @@ export default class AuraGlassBlurExtension extends Extension {
     // switch on that row is one choice about the class, not about any one of
     // its windows.
     ListWindows() {
+        this._ensureWindowTracking();
         const tracker = Shell.WindowTracker.get_default();
         const groups = new Map();
         for (const actor of global.get_window_actors()) {
@@ -405,11 +446,60 @@ export default class AuraGlassBlurExtension extends Extension {
             ([wmClass, {name, count}]) => [wmClass, name, count]);
     }
 
-    // ---- keeping ListWindows fresh -----------------------------------------
+    // ---- lazy window tracking & keeping ListWindows fresh --------------------
+
+    // Windows are tracked only on demand when a client (e.g. the settings window)
+    // calls ListWindows. Disconnects automatically after 30 seconds of inactivity
+    // to avoid idle CPU wakeups and D-Bus traffic during ordinary desktop use.
+    _ensureWindowTracking() {
+        if (this._trackingExpiryTimer) {
+            GLib.source_remove(this._trackingExpiryTimer);
+            this._trackingExpiryTimer = 0;
+        }
+        this._trackingExpiryTimer = GLib.timeout_add_seconds(
+            GLib.PRIORITY_DEFAULT, 30, () => {
+                this._trackingExpiryTimer = 0;
+                this._stopWindowTracking();
+                return GLib.SOURCE_REMOVE;
+            });
+
+        if (this._windowCreatedId)
+            return;
+
+        this._windowCreatedId = global.display.connect(
+            'window-created', (_display, window) => this._trackWindow(window));
+
+        for (const actor of global.get_window_actors())
+            this._trackWindow(actor.get_meta_window());
+    }
+
+    _stopWindowTracking() {
+        if (this._trackingExpiryTimer) {
+            GLib.source_remove(this._trackingExpiryTimer);
+            this._trackingExpiryTimer = 0;
+        }
+        if (this._windowsChangedTimer) {
+            GLib.source_remove(this._windowsChangedTimer);
+            this._windowsChangedTimer = 0;
+        }
+        if (this._windowCreatedId) {
+            global.display.disconnect(this._windowCreatedId);
+            this._windowCreatedId = 0;
+        }
+        if (this._destroyIds) {
+            for (const [window, id] of this._destroyIds)
+                window.disconnect(id);
+            this._destroyIds.clear();
+        }
+    }
 
     _trackWindow(window) {
         if (!window || this._destroyIds.has(window))
             return;
+        // Skip unblurrable, override-redirect or transient OS window actors
+        if (window.is_override_redirect() || window.is_skip_taskbar() || !isBlurrable(window.get_frame_type()))
+            return;
+
         const id = window.connect('unmanaged', () => {
             this._destroyIds.delete(window);
             this._scheduleWindowsChanged();
@@ -423,6 +513,9 @@ export default class AuraGlassBlurExtension extends Extension {
     // later — and firing once per intermediate window would have the
     // settings window's list flicker rather than settle.
     _scheduleWindowsChanged() {
+        if (!this._windowCreatedId)
+            return;
+
         if (this._windowsChangedTimer)
             GLib.source_remove(this._windowsChangedTimer);
         this._windowsChangedTimer = GLib.timeout_add(
