@@ -36,6 +36,9 @@ install_gui() {
 
     run install -Dm644 "$REPO_ROOT/gui/aura_glass_settings.py" \
         "$GUI_DIR/aura_glass_settings.py"
+    if [ "${DRY_RUN:-0}" != 1 ] && command -v python3 >/dev/null 2>&1; then
+        python3 -m py_compile "$GUI_DIR/aura_glass_settings.py" 2>/dev/null || true
+    fi
     run install -Dm755 "$REPO_ROOT/bin/aura-glass-settings" \
         "$HOME/.local/bin/aura-glass-settings"
     # Backs the settings window's live preview: begin/set/revert reapply the

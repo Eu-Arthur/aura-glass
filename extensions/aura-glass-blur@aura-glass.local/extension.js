@@ -709,10 +709,14 @@ export default class AuraGlassBlurExtension extends Extension {
     _checkLocked() {
         if (!Main.screenShield)
             return;
-        if (Main.screenShield.locked)
+        if (Main.screenShield.locked) {
             this._addInhibitReason('locked', false);
-        else
+            if (typeof gc === 'function') {
+                try { gc(); } catch (_) {}
+            }
+        } else {
             this._removeInhibitReason('locked', false);
+        }
     }
 
     _addInhibitReason(reason, isInitial) {

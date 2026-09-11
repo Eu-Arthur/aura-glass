@@ -229,7 +229,8 @@ def is_transparent(value):
 
 
 def process_target(target, flatten, snippets):
-    css = open(target, encoding="utf-8").read()
+    raw_orig = open(target, encoding="utf-8").read()
+    css = raw_orig
     for name in ("aura-glass", "tahoe-glass", "tahoe-tweaks"):
         css = re.sub(
             r"/\* >>> %s BEGIN <<< \*/.*?/\* >>> %s END <<< \*/\n?" % (name, name),
@@ -292,10 +293,12 @@ def process_target(target, flatten, snippets):
             css = ACCENT_HEX.sub(accent, css)
 
     block = "\n\n".join(read_snippet(p) for p in snippets)
-    open(target, "w", encoding="utf-8").write(
-        css.rstrip("\n") + "\n\n" + BEGIN + "\n" + block + "\n" + END + "\n"
-    )
-    print("applied ->", target, "(%d snippet%s)" % (len(snippets), "" if len(snippets) == 1 else "s"))
+    new_content = css.rstrip("\n") + "\n\n" + BEGIN + "\n" + block + "\n" + END + "\n"
+    if raw_orig != new_content:
+        open(target, "w", encoding="utf-8").write(new_content)
+        print("applied ->", target, "(%d snippet%s)" % (len(snippets), "" if len(snippets) == 1 else "s"))
+    else:
+        print("unchanged ->", target, "(up to date)")
 
 
 groups = []
