@@ -45,7 +45,10 @@ ${C_BLD}COMMANDS:${C_OFF}
     ${C_CYA}profile${C_OFF} [list|apply]   Manage visual atmosphere presets (sonoma, visionos, etc.)
     ${C_CYA}mode${C_OFF} [get|set|toggle]   Manage glass mode (frosted, transparent, solid, eco, auto)
     ${C_CYA}accent${C_OFF} [auto|set|get]   Manage or auto-sync accent color with wallpaper
+    ${C_CYA}adaptive${C_OFF} [enable|status] Circadian day/night adaptive glass transitions
     ${C_CYA}shortcut${C_OFF} [enable|status] Configure GNOME keyboard shortcuts (<Super><Alt>G / A)
+    ${C_CYA}bench${C_OFF} [--tune]           Run GPU benchmark & compositor performance scoring
+    ${C_CYA}browser${C_OFF} [firefox]        Integrate frosted glass styling for web browsers
     ${C_CYA}terminal${C_OFF} [status|sync] Configure transparency & blur for modern terminals
     ${C_CYA}daemon${C_OFF} [status|start]  Control background wallpaper & battery monitor
     ${C_CYA}doctor${C_OFF}                Run full system health checks and diagnostics
@@ -229,6 +232,15 @@ cmd_status() {
     local daemon_raw="inactive"
     [ -f "$CONF_DIR/daemon.pid" ] && kill -0 "$(cat "$CONF_DIR/daemon.pid" 2>/dev/null)" 2>/dev/null && daemon_raw="running (PID $(cat "$CONF_DIR/daemon.pid" 2>/dev/null))"
 
+    local adaptive_raw="disabled"
+    local adaptive_info="${C_DIM}disabled${C_OFF}"
+    if [ -f "$CONF_DIR/adaptive-mode" ]; then
+        local a_phase="active"
+        [ -r "$CONF_DIR/adaptive-phase" ] && a_phase="$(head -n 1 "$CONF_DIR/adaptive-phase" 2>/dev/null || echo "active")"
+        adaptive_raw="active ($a_phase)"
+        adaptive_info="${C_GRN}active${C_OFF} ($a_phase)"
+    fi
+
     printf '\n%s╭────────────────────────────────────────────────╮%s\n' "$C_BLU" "$C_OFF"
     printf '%s│%s   %s✨ Aura Glass Desktop Status%s                  %s│%s\n' "$C_BLU" "$C_OFF" "$C_BLD" "$C_OFF" "$C_BLU" "$C_OFF"
     printf '%s├────────────────────────────────────────────────┤%s\n' "$C_BLU" "$C_OFF"
@@ -238,6 +250,7 @@ cmd_status() {
     print_card_row "Glass Mode" "$mode_raw" "$mode_label"
     print_card_row "Shell Theme" "$theme"
     print_card_row "Accent" "$accent_raw" "$accent_display"
+    print_card_row "Adaptive" "$adaptive_raw" "$adaptive_info"
     print_card_row "Daemon" "$daemon_raw" "$daemon_state"
     print_card_row "Power Source" "$power_raw" "$power_info"
     print_card_row "Auto-Eco" "$eco_raw" "$auto_eco"
@@ -480,6 +493,15 @@ main() {
             ;;
         shortcut|shortcuts)
             cmd_shortcut "$@"
+            ;;
+        adaptive)
+            exec "$BIN_DIR/aura-glass-adaptive" "$@"
+            ;;
+        bench|benchmark)
+            exec "$BIN_DIR/aura-glass-bench" "$@"
+            ;;
+        browser|browsers)
+            exec "$BIN_DIR/aura-glass-browser" "$@"
             ;;
         terminal|terminals)
             exec "$BIN_DIR/aura-glass-terminal" "$@"

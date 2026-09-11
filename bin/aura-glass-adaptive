@@ -1,0 +1,242 @@
+#!/usr/bin/env bash
+# aura-glass-adaptive — circadian day/night adaptive glass transition manager.
+set -euo pipefail
+
+CONF_DIR="${AURA_GLASS_CONF:-${AURA_GLASS_DIR:-${TAHOE_GLASS_DIR:-$HOME/.config/aura-glass}}}"
+[ -d "$CONF_DIR" ] || [ ! -d "$HOME/.config/tahoe-glass" ] || CONF_DIR="$HOME/.config/tahoe-glass"
+
+ADAPTIVE_FLAG="$CONF_DIR/adaptive-mode"
+DAY_FILE="$CONF_DIR/adaptive-day"
+NIGHT_FILE="$CONF_DIR/adaptive-night"
+PHASE_FILE="$CONF_DIR/adaptive-phase"
+
+# Guard: Refuse running as root
+if [ "$(id -u)" -eq 0 ]; then
+    printf 'error: aura-glass-adaptive must not be run as root.\n' >&2
+    exit 1
+fi
+
+C_BLD=$'\033[1m'
+C_BLU=$'\033[1;34m'
+C_CYA=$'\033[1;36m'
+C_GRN=$'\033[1;32m'
+C_YEL=$'\033[1;33m'
+C_DIM=$'\033[2m'
+C_OFF=$'\033[0m'
+
+usage() {
+    cat <<'EOF'
+aura-glass-adaptive — circadian & day/night adaptive glass controller
+
+USAGE:
+    aura-glass adaptive status
+    aura-glass adaptive enable [--day <profile>] [--night <profile>]
+    aura-glass adaptive disable
+    aura-glass adaptive sync
+    aura-glass adaptive trigger <day | night>
+    aura-glass adaptive -h | --help
+
+DESCRIPTIONS:
+    • Day Phase:   Bright crystalline glass (sonoma/visionOS) with natural contrast
+    • Night Phase: Deep obsidian glass (nordic) with warmer amber tint to reduce eye strain
+    • Integration: Synchronizes with GNOME Night Light or automated solar schedule
+EOF
+}
+
+die() { printf 'error: %s\n' "$*" >&2; exit 1; }
+ok()  { printf '✓ %s\n' "$*"; }
+
+get_day_profile() {
+    if [ -r "$DAY_FILE" ]; then
+        head -n 1 "$DAY_FILE" 2>/dev/null || echo "sonoma"
+    else
+        echo "sonoma"
+    fi
+}
+
+get_night_profile() {
+    if [ -r "$NIGHT_FILE" ]; then
+        head -n 1 "$NIGHT_FILE" 2>/dev/null || echo "nordic"
+    else
+        echo "nordic"
+    fi
+}
+
+detect_current_phase() {
+    # 1. Check GNOME Night Light if gsettings is available
+    if command -v gsettings >/dev/null 2>&1 && gsettings list-schemas 2>/dev/null | grep -q '^org\.gnome\.settings-daemon\.plugins\.color$'; then
+        local nl_active
+        nl_active="$(gsettings get org.gnome.settings-daemon.plugins.color night-light-active 2>/dev/null || echo "false")"
+        if [ "$nl_active" = "true" ]; then
+            echo "night"
+            return 0
+        fi
+        local nl_enabled
+        nl_enabled="$(gsettings get org.gnome.settings-daemon.plugins.color night-light-enabled 2>/dev/null || echo "false")"
+        if [ "$nl_enabled" = "true" ]; then
+            echo "day"
+            return 0
+        fi
+    fi
+
+    # 2. Solar fallback: 20:00 - 07:00 is night, 07:00 - 20:00 is day
+    local hour
+    hour="$(date +%-H)"
+    if [ "$hour" -ge 20 ] || [ "$hour" -lt 7 ]; then
+        echo "night"
+    else
+        echo "day"
+    fi
+}
+
+cmd_status() {
+    printf '%sCircadian & Adaptive Glass Status:%s\n\n' "$C_BLD" "$C_OFF"
+
+    local is_enabled="${C_DIM}disabled${C_OFF}"
+    [ -f "$ADAPTIVE_FLAG" ] && is_enabled="${C_GRN}enabled (active)${C_OFF}"
+    printf '  Adaptive Mode:       %s\n' "$is_enabled"
+
+    local phase
+    phase="$(detect_current_phase)"
+    local phase_badge="${C_YEL}☀️  Day (Bright)${C_OFF}"
+    [ "$phase" = "night" ] && phase_badge="${C_BLU}🌙 Night (Obsidian Warm)${C_OFF}"
+    printf '  Current Phase:       %s\n' "$phase_badge"
+
+    local day_prof night_prof
+    day_prof="$(get_day_profile)"
+    night_prof="$(get_night_profile)"
+    printf '  Daytime Profile:     %s%s%s\n' "$C_CYA" "$day_prof" "$C_OFF"
+    printf '  Nighttime Profile:   %s%s%s\n' "$C_BLU" "$night_prof" "$C_OFF"
+
+    # Night Light integration
+    local nl_status="${C_DIM}unavailable${C_OFF}"
+    if command -v gsettings >/dev/null 2>&1 && gsettings list-schemas 2>/dev/null | grep -q '^org\.gnome\.settings-daemon\.plugins\.color$'; then
+        local nl_active nl_enabled
+        nl_active="$(gsettings get org.gnome.settings-daemon.plugins.color night-light-active 2>/dev/null || echo "false")"
+        nl_enabled="$(gsettings get org.gnome.settings-daemon.plugins.color night-light-enabled 2>/dev/null || echo "false")"
+        if [ "$nl_active" = "true" ]; then
+            nl_status="${C_GRN}active (Night Light ON)${C_OFF}"
+        elif [ "$nl_enabled" = "true" ]; then
+            nl_status="${C_YEL}scheduled (waiting for sunset)${C_OFF}"
+        else
+            nl_status="${C_DIM}disabled (using clock fallback: 20:00-07:00)${C_OFF}"
+        fi
+    fi
+    printf '  GNOME Night Light:   %s\n' "$nl_status"
+
+    local last_phase="none"
+    [ -r "$PHASE_FILE" ] && last_phase="$(head -n 1 "$PHASE_FILE" 2>/dev/null || echo "none")"
+    printf '  Last Applied Phase:  %s\n' "$last_phase"
+}
+
+cmd_enable() {
+    local day_prof=""
+    local night_prof=""
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --day)
+                day_prof="${2:-}"
+                shift 2
+                ;;
+            --night)
+                night_prof="${2:-}"
+                shift 2
+                ;;
+            *) shift ;;
+        esac
+    done
+
+    mkdir -p "$CONF_DIR"
+    touch "$ADAPTIVE_FLAG"
+    [ -n "$day_prof" ] && printf '%s\n' "$day_prof" > "$DAY_FILE"
+    [ -n "$night_prof" ] && printf '%s\n' "$night_prof" > "$NIGHT_FILE"
+
+    ok "Adaptive circadian mode enabled."
+    cmd_sync
+}
+
+cmd_disable() {
+    rm -f "$ADAPTIVE_FLAG"
+    ok "Adaptive circadian mode disabled."
+}
+
+cmd_sync() {
+    if [ ! -f "$ADAPTIVE_FLAG" ]; then
+        printf 'Adaptive mode is disabled. Run "aura-glass adaptive enable" to activate.\n'
+        return 0
+    fi
+
+    local phase
+    phase="$(detect_current_phase)"
+    local target_profile
+    if [ "$phase" = "night" ]; then
+        target_profile="$(get_night_profile)"
+    else
+        target_profile="$(get_day_profile)"
+    fi
+
+    local last_phase=""
+    [ -r "$PHASE_FILE" ] && last_phase="$(head -n 1 "$PHASE_FILE" 2>/dev/null || true)"
+
+    if [ "$phase" != "$last_phase" ]; then
+        printf '%sCircadian shift detected:%s %s ➔ Applying profile %s%s%s\n' \
+            "$C_BLD" "$C_OFF" "$phase" "$C_CYA" "$target_profile" "$C_OFF"
+
+        if command -v aura-glass-profile >/dev/null 2>&1; then
+            aura-glass-profile apply "$target_profile" >/dev/null 2>&1 || true
+        elif command -v aura-glass >/dev/null 2>&1; then
+            aura-glass profile apply "$target_profile" >/dev/null 2>&1 || true
+        fi
+
+        printf '%s\n' "$phase" > "$PHASE_FILE"
+        ok "Applied $phase profile ($target_profile)."
+    else
+        printf 'Phase unchanged (%s, profile %s). No transition needed.\n' "$phase" "$target_profile"
+    fi
+}
+
+cmd_trigger() {
+    local phase="${1:-}"
+    [ -n "$phase" ] || die "missing phase: use 'day' or 'night'"
+
+    case "$phase" in
+        day|night) ;;
+        *) die "invalid phase '$phase': choose 'day' or 'night'" ;;
+    esac
+
+    local target_profile
+    if [ "$phase" = "night" ]; then
+        target_profile="$(get_night_profile)"
+    else
+        target_profile="$(get_day_profile)"
+    fi
+
+    printf '%sTriggering manual circadian phase:%s %s (%s)\n' "$C_BLD" "$C_OFF" "$phase" "$target_profile"
+    if command -v aura-glass-profile >/dev/null 2>&1; then
+        aura-glass-profile apply "$target_profile" >/dev/null 2>&1 || true
+    elif command -v aura-glass >/dev/null 2>&1; then
+        aura-glass profile apply "$target_profile" >/dev/null 2>&1 || true
+    fi
+
+    mkdir -p "$CONF_DIR"
+    printf '%s\n' "$phase" > "$PHASE_FILE"
+    ok "Forced $phase phase with profile '$target_profile'."
+}
+
+main() {
+    local action="${1:-status}"
+    shift || true
+
+    case "$action" in
+        status) cmd_status "$@" ;;
+        enable) cmd_enable "$@" ;;
+        disable) cmd_disable "$@" ;;
+        sync) cmd_sync "$@" ;;
+        trigger) cmd_trigger "$@" ;;
+        -h|--help|help) usage ;;
+        *) die "unknown action '$action'. Run 'aura-glass adaptive --help' for usage." ;;
+    esac
+}
+
+main "$@"

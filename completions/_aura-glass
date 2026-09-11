@@ -1,4 +1,4 @@
-#compdef aura-glass install.sh uninstall.sh aura-glass-apply aura-glass-ext aura-glass-doctor aura-glass-update-check aura-glass-backup aura-glass-mode aura-glass-profile aura-glass-daemon aura-glass-terminal
+#compdef aura-glass install.sh uninstall.sh aura-glass-apply aura-glass-ext aura-glass-doctor aura-glass-update-check aura-glass-backup aura-glass-mode aura-glass-profile aura-glass-daemon aura-glass-terminal aura-glass-adaptive aura-glass-bench aura-glass-browser
 
 # Zsh completion for Aura Glass suite
 
@@ -177,7 +177,10 @@ _aura_glass() {
         'profile:Manage visual atmosphere presets (sonoma, visionos, etc.)'
         'mode:Manage glass mode (frosted, transparent, solid, eco, auto)'
         'accent:Query, set, or auto-sync accent color from wallpaper'
+        'adaptive:Circadian day/night adaptive glass transitions'
         'shortcut:Configure GNOME keyboard shortcuts'
+        'bench:Run GPU benchmark & compositor performance scoring'
+        'browser:Integrate frosted glass styling for web browsers'
         'terminal:Configure transparency & blur for modern terminals'
         'daemon:Control background wallpaper & battery daemon'
         'doctor:Run full system health checks and diagnostics'
@@ -220,6 +223,27 @@ _aura_glass() {
                 '1:accent action:(get auto set list blue teal green yellow orange red pink purple slate)' \
                 '--json[Output JSON format]' \
                 '(-h --help)'{-h,--help}'[Show accent help]'
+            ;;
+        adaptive)
+            _arguments -s \
+                '1:adaptive action:(status enable disable sync trigger)' \
+                '--day[Specify day profile]:profile:(sonoma visionos nordic minimal cyberpunk eco)' \
+                '--night[Specify night profile]:profile:(sonoma visionos nordic minimal cyberpunk eco)' \
+                '(-h --help)'{-h,--help}'[Show adaptive help]'
+            ;;
+        bench|benchmark)
+            _arguments -s \
+                '--json[Output benchmark in JSON format]' \
+                '--quick[Fast execution without micro-benchmark pass]' \
+                '--tune[Analyze and recommend optimal settings]' \
+                '--apply[Apply recommended tuning]' \
+                '(-h --help)'{-h,--help}'[Show bench help]'
+            ;;
+        browser|browsers)
+            _arguments -s \
+                '1:browser action:(status firefox snippet)' \
+                '2:action:(enable disable sync status snippet)' \
+                '(-h --help)'{-h,--help}'[Show browser help]'
             ;;
         shortcut|shortcuts)
             _arguments -s \
@@ -293,6 +317,15 @@ case "${words[1]:t}" in
         ;;
     aura-glass-terminal)
         _arguments -s '1:terminal action:(status sync apply snippet)' '2:terminal:(ghostty kitty alacritty wezterm foot ptyxis)' '(-h --help)'{-h,--help}'[Show terminal help]'
+        ;;
+    aura-glass-adaptive)
+        _arguments -s '1:adaptive action:(status enable disable sync trigger)' '(-h --help)'{-h,--help}'[Show adaptive help]'
+        ;;
+    aura-glass-bench)
+        _arguments -s '--json[Output JSON]' '--quick[Fast execution]' '--tune[Auto-tune]' '--apply[Apply tuning]' '(-h --help)'{-h,--help}'[Show bench help]'
+        ;;
+    aura-glass-browser)
+        _arguments -s '1:browser action:(status firefox snippet)' '2:action:(enable disable sync status snippet)' '(-h --help)'{-h,--help}'[Show browser help]'
         ;;
     aura-glass-update-check)
         _aura_glass_update_check

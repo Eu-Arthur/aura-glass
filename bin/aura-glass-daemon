@@ -102,6 +102,13 @@ cmd_status() {
         printf '  ● Battery Auto-Eco:   %senabled (dynamic UPower / sysfs)%s\n' "$C_GRN" "$C_OFF"
     fi
 
+    # Circadian Adaptive
+    if [ -f "$CONF_DIR/adaptive-mode" ]; then
+        printf '  ● Circadian Adaptive: %senabled (Night Light / solar sync)%s\n' "$C_GRN" "$C_OFF"
+    else
+        printf '  ○ Circadian Adaptive: %sdisabled (%s/adaptive-mode)%s\n' "$C_DIM" "$CONF_DIR" "$C_OFF"
+    fi
+
     # Log file
     if [ -f "$LOG_FILE" ]; then
         local log_size
@@ -328,6 +335,21 @@ cmd_run() {
         done
     ) &
     subpids+=("$!")
+
+    # 4. Circadian & Night Light Watcher
+    if command -v gsettings >/dev/null 2>&1 && gsettings list-schemas 2>/dev/null | grep -q '^org\.gnome\.settings-daemon\.plugins\.color$'; then
+        (
+            gsettings monitor org.gnome.settings-daemon.plugins.color night-light-active 2>/dev/null | while read -r _; do
+                if [ -f "$CONF_DIR/adaptive-mode" ]; then
+                    sleep 1.0
+                    if command -v aura-glass-adaptive >/dev/null 2>&1; then
+                        aura-glass-adaptive sync >/dev/null 2>&1 || true
+                    fi
+                fi
+            done
+        ) &
+        subpids+=("$!")
+    fi
 
     # Wait for any child
     wait -n "${subpids[@]}" 2>/dev/null || wait

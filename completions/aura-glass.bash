@@ -216,13 +216,61 @@ _aura_glass_terminal() {
     COMPREPLY=( $(compgen -W "$subcmds" -- "$cur") )
 }
 
+_aura_glass_adaptive() {
+    local cur prev subcmds
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    subcmds="status enable disable sync trigger -h --help"
+
+    case "$prev" in
+        trigger)
+            COMPREPLY=( $(compgen -W "day night" -- "$cur") )
+            return 0
+            ;;
+        --day|--night)
+            COMPREPLY=( $(compgen -W "sonoma visionos nordic minimal cyberpunk eco" -- "$cur") )
+            return 0
+            ;;
+    esac
+
+    COMPREPLY=( $(compgen -W "$subcmds" -- "$cur") )
+}
+
+_aura_glass_bench() {
+    local cur opts
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    opts="--json --quick --tune --apply -h --help"
+    COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
+}
+
+_aura_glass_browser() {
+    local cur prev subcmds
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    subcmds="status firefox snippet -h --help"
+
+    case "$prev" in
+        firefox)
+            COMPREPLY=( $(compgen -W "enable disable sync status snippet -h --help" -- "$cur") )
+            return 0
+            ;;
+    esac
+
+    COMPREPLY=( $(compgen -W "$subcmds" -- "$cur") )
+}
+
 _aura_glass_main() {
     local cur prev subcmds
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    subcmds="status profile mode accent shortcut terminal daemon doctor settings backup apply gdm update ext preview version help"
+    subcmds="status profile mode accent adaptive shortcut bench browser terminal daemon doctor settings backup apply gdm update ext preview version help"
 
     if [ "$COMP_CWORD" -eq 1 ]; then
         COMPREPLY=( $(compgen -W "$subcmds -h --help -v --version" -- "$cur") )
@@ -243,6 +291,15 @@ _aura_glass_main() {
             elif [ "$COMP_CWORD" -eq 3 ] && [ "$prev" = "set" ]; then
                 COMPREPLY=( $(compgen -W "blue teal green yellow orange red pink purple slate" -- "$cur") )
             fi
+            ;;
+        adaptive)
+            _aura_glass_adaptive
+            ;;
+        bench|benchmark)
+            _aura_glass_bench
+            ;;
+        browser|browsers)
+            _aura_glass_browser
             ;;
         shortcut|shortcuts)
             if [ "$COMP_CWORD" -eq 2 ]; then
@@ -280,6 +337,10 @@ complete -F _aura_glass_mode aura-glass-mode ./bin/aura-glass-mode bin/aura-glas
 complete -F _aura_glass_profile aura-glass-profile ./bin/aura-glass-profile bin/aura-glass-profile
 complete -F _aura_glass_daemon aura-glass-daemon ./bin/aura-glass-daemon bin/aura-glass-daemon
 complete -F _aura_glass_terminal aura-glass-terminal ./bin/aura-glass-terminal bin/aura-glass-terminal
+complete -F _aura_glass_adaptive aura-glass-adaptive ./bin/aura-glass-adaptive bin/aura-glass-adaptive
+complete -F _aura_glass_bench aura-glass-bench ./bin/aura-glass-bench bin/aura-glass-bench
+complete -F _aura_glass_browser aura-glass-browser ./bin/aura-glass-browser bin/aura-glass-browser
 complete -F _aura_glass_main aura-glass ./bin/aura-glass bin/aura-glass
+
 
 
