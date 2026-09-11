@@ -1,0 +1,327 @@
+#!/usr/bin/env bash
+# aura-glass-bundle — portable theme bundle packager, importer, and exporter.
+set -euo pipefail
+
+CONF_DIR="${AURA_GLASS_CONF:-${AURA_GLASS_DIR:-${TAHOE_GLASS_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/aura-glass}}}"
+[ -d "$CONF_DIR" ] || [ ! -d "${XDG_CONFIG_HOME:-$HOME/.config}/tahoe-glass" ] || CONF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/tahoe-glass"
+
+export CONF_DIR
+export AURA_GLASS_CONF="$CONF_DIR"
+
+BUNDLES_DIR="$CONF_DIR/bundles"
+REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+
+C_BLD=$'\033[1m'
+C_CYA=$'\033[1;36m'
+C_GRN=$'\033[1;32m'
+C_YEL=$'\033[1;33m'
+C_RED=$'\033[1;31m'
+C_DIM=$'\033[2m'
+C_OFF=$'\033[0m'
+
+CLEANUP_DIRS=()
+cleanup() {
+    for d in "${CLEANUP_DIRS[@]}"; do
+        if [ -n "$d" ] && [ -d "$d" ]; then
+            rm -rf "$d" 2>/dev/null || true
+        fi
+    done
+}
+trap cleanup EXIT INT TERM
+
+ok()  { printf '%s✓%s %s\n' "$C_GRN" "$C_OFF" "$*"; }
+die() { printf '%serror:%s %s\n' "$C_RED" "$C_OFF" "$*" >&2; exit 1; }
+
+usage() {
+    cat <<'EOF'
+aura-glass-bundle — portable theme packager & atmosphere sharing manager
+
+USAGE:
+    aura-glass bundle export [FILE.auraglass] [--name "Title"] [--author "Name"]
+    aura-glass bundle apply <FILE.auraglass>
+    aura-glass bundle inspect <FILE.auraglass>
+    aura-glass bundle list
+    aura-glass bundle -h | --help
+
+SUBCOMMANDS:
+    export     Archive current wallpaper, accent, profile, glow, and sound into a bundle
+    apply      Unpack and apply a complete atmosphere bundle atomically
+    inspect    Preview bundle contents, metadata, and assets without applying
+    list       Show all available bundles in ~/.config/aura-glass/bundles/
+EOF
+}
+
+cmd_export() {
+    local out_file=""
+    local bundle_name=""
+    local bundle_author="${USER:-aura-user}"
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --name)
+                bundle_name="$2"
+                shift 2
+                ;;
+            --author)
+                bundle_author="$2"
+                shift 2
+                ;;
+            -*)
+                die "unknown option $1"
+                ;;
+            *)
+                if [ -z "$out_file" ]; then
+                    out_file="$1"
+                fi
+                shift
+                ;;
+        esac
+    done
+
+    # Read current state
+    local accent="blue"
+    [ -r "$CONF_DIR/accent" ] && accent="$(head -n 1 "$CONF_DIR/accent" 2>/dev/null || echo "blue")"
+
+    local profile="custom"
+    [ -r "$CONF_DIR/current-profile" ] && profile="$(head -n 1 "$CONF_DIR/current-profile" 2>/dev/null || echo "custom")"
+
+    local mode="frosted"
+    [ -r "$CONF_DIR/glass-mode" ] && mode="$(head -n 1 "$CONF_DIR/glass-mode" 2>/dev/null || echo "frosted")"
+    [ -f "$CONF_DIR/styling-off" ] && mode="solid"
+
+    local glow="off"
+    [ -f "$CONF_DIR/glow" ] && glow="$(head -n 1 "$CONF_DIR/glow" 2>/dev/null || echo "subtle")"
+
+    local sound="disabled"
+    [ -f "$CONF_DIR/sound-theme-active" ] && sound="enabled"
+
+    if [ -z "$bundle_name" ]; then
+        bundle_name="Aura-${profile^}-${accent^}"
+    fi
+
+    mkdir -p "$BUNDLES_DIR"
+    if [ -z "$out_file" ]; then
+        local safe_name
+        safe_name="$(printf '%s' "$bundle_name" | tr '[:upper:] ' '[:lower:]-')"
+        out_file="$BUNDLES_DIR/${safe_name}.auraglass"
+    fi
+
+    local tmp_base="${AURA_GLASS_TMP:-${XDG_RUNTIME_DIR:-/tmp}}"
+    local tmp_stage
+    tmp_stage="$(mktemp -d "$tmp_base/aura-bundle-stage-XXXXXX")"
+    CLEANUP_DIRS+=("$tmp_stage")
+
+    # Find active wallpaper if possible
+    local has_wallpaper=0
+    local wp_path=""
+    if command -v gsettings >/dev/null 2>&1; then
+        wp_path="$(gsettings get org.gnome.desktop.background picture-uri 2>/dev/null || true)"
+        wp_path="${wp_path//\'/}"
+        wp_path="${wp_path#file://}"
+    fi
+    if [ -n "$wp_path" ] && [ -f "$wp_path" ]; then
+        cp "$wp_path" "$tmp_stage/wallpaper.png" 2>/dev/null || true
+        has_wallpaper=1
+    fi
+
+    # Copy profile if available
+    local profile_file="$CONF_DIR/profiles/${profile}.json"
+    if [ -f "$profile_file" ]; then
+        cp "$profile_file" "$tmp_stage/profile.json"
+    fi
+
+    # Write manifest.json and create compressed archive
+    python3 -c "
+import json, tarfile, os
+manifest = {
+    'version': '1.0',
+    'name': '$bundle_name',
+    'author': '$bundle_author',
+    'date': '$(date -Iseconds 2>/dev/null || date +%Y-%m-%d)',
+    'accent': '$accent',
+    'profile': '$profile',
+    'mode': '$mode',
+    'glow': '$glow',
+    'sound': '$sound',
+    'has_wallpaper': bool($has_wallpaper)
+}
+with open(os.path.join('$tmp_stage', 'manifest.json'), 'w', encoding='utf-8') as f:
+    json.dump(manifest, f, indent=2)
+
+with tarfile.open('$out_file', 'w:gz') as tar:
+    for item in os.listdir('$tmp_stage'):
+        p = os.path.join('$tmp_stage', item)
+        tar.add(p, arcname=item)
+"
+
+    ok "Exported theme bundle to $out_file."
+    printf '  Name:    %s%s%s\n' "$C_BLD" "$bundle_name" "$C_OFF"
+    printf '  Accent:  %s%s%s\n' "$C_CYA" "$accent" "$C_OFF"
+    printf '  Profile: %s\n' "$profile"
+    printf '  Glow:    %s\n' "$glow"
+}
+
+cmd_inspect() {
+    local bundle_file="${1:-}"
+    [ -n "$bundle_file" ] || die "missing bundle file argument"
+    [ -f "$bundle_file" ] || die "bundle file not found: $bundle_file"
+
+    python3 -c "
+import json, tarfile, sys
+try:
+    with tarfile.open('$bundle_file', 'r:gz') as tar:
+        f = tar.extractfile('manifest.json')
+        if not f:
+            print('error: missing manifest.json in bundle', file=sys.stderr)
+            sys.exit(1)
+        d = json.load(f)
+except Exception as e:
+    print(f'error: invalid or corrupted .auraglass archive: {e}', file=sys.stderr)
+    sys.exit(1)
+
+print(f'\033[1mAura Glass Theme Bundle: {d.get(\"name\", \"Unnamed\")}\033[0m\n')
+print(f'  Author:         {d.get(\"author\", \"unknown\")}')
+print(f'  Created:        {d.get(\"date\", \"unknown\")}')
+print(f'  Accent Color:   \033[1;36m{d.get(\"accent\", \"default\")}\033[0m')
+print(f'  Visual Profile: {d.get(\"profile\", \"custom\")}')
+print(f'  Glass Mode:     {d.get(\"mode\", \"frosted\")}')
+print(f'  Window Glow:    {d.get(\"glow\", \"off\")}')
+print(f'  Sound Theme:    {d.get(\"sound\", \"disabled\")}')
+print(f'  Wallpaper:      {\"included (wallpaper.png)\" if d.get(\"has_wallpaper\") else \"none\"}')
+"
+}
+
+cmd_apply() {
+    local bundle_file="${1:-}"
+    [ -n "$bundle_file" ] || die "missing bundle file argument"
+    [ -f "$bundle_file" ] || die "bundle file not found: $bundle_file"
+
+    local tmp_base="${AURA_GLASS_TMP:-${XDG_RUNTIME_DIR:-/tmp}}"
+    local tmp_stage
+    tmp_stage="$(mktemp -d "$tmp_base/aura-bundle-apply-XXXXXX")"
+    CLEANUP_DIRS+=("$tmp_stage")
+
+    # Extract and parse metadata
+    eval "$(python3 -c "
+import json, tarfile, os, sys
+try:
+    with tarfile.open('$bundle_file', 'r:gz') as tar:
+        tar.extractall('$tmp_stage')
+    with open(os.path.join('$tmp_stage', 'manifest.json'), 'r', encoding='utf-8') as f:
+        d = json.load(f)
+    for k in ['accent', 'profile', 'mode', 'glow', 'sound', 'name']:
+        print(f'B_{k.upper()}=\"{d.get(k, \"\")}\"')
+except Exception as e:
+    print(f'error: failed to extract bundle: {e}', file=sys.stderr)
+    sys.exit(1)
+")"
+
+    printf '%sApplying Aura Glass Bundle: %s%s%s\n\n' "$C_BLD" "$C_CYA" "${B_NAME:-Bundle}" "$C_OFF"
+
+    # 1. Apply accent
+    if [ -n "${B_ACCENT:-}" ] && [ "$B_ACCENT" != "default" ]; then
+        if [ -x "$REPO_ROOT/bin/aura-glass" ]; then
+            AURA_GLASS_CONF="$CONF_DIR" "$REPO_ROOT/bin/aura-glass" accent set "$B_ACCENT" >/dev/null 2>&1 || true
+        fi
+        mkdir -p "$CONF_DIR"
+        printf '%s\n' "$B_ACCENT" > "$CONF_DIR/accent"
+        ok "Set accent color to $B_ACCENT."
+    fi
+
+    # 2. Apply profile
+    if [ -f "$tmp_stage/profile.json" ]; then
+        mkdir -p "$CONF_DIR/profiles"
+        cp "$tmp_stage/profile.json" "$CONF_DIR/profiles/${B_PROFILE:-imported}.json"
+        if [ -x "$REPO_ROOT/bin/aura-glass-profile" ]; then
+            AURA_GLASS_CONF="$CONF_DIR" "$REPO_ROOT/bin/aura-glass-profile" apply "${B_PROFILE:-imported}" >/dev/null 2>&1 || true
+        fi
+        ok "Applied visual profile: ${B_PROFILE:-imported}."
+    fi
+
+    # 3. Apply wallpaper
+    if [ -f "$tmp_stage/wallpaper.png" ]; then
+        local dest_wp="$CONF_DIR/wallpaper.png"
+        cp "$tmp_stage/wallpaper.png" "$dest_wp"
+        if [ -x "$REPO_ROOT/bin/aura-glass-wallpaper" ]; then
+            AURA_GLASS_CONF="$CONF_DIR" "$REPO_ROOT/bin/aura-glass-wallpaper" apply "$dest_wp" >/dev/null 2>&1 || true
+        fi
+        ok "Installed and applied bundled wallpaper."
+    fi
+
+    # 4. Apply window glow
+    if [ -n "${B_GLOW:-}" ] && [ "$B_GLOW" != "off" ]; then
+        mkdir -p "$CONF_DIR"
+        printf '%s\n' "$B_GLOW" > "$CONF_DIR/glow"
+        if [ -x "$REPO_ROOT/bin/aura-glass-glow" ]; then
+            AURA_GLASS_CONF="$CONF_DIR" "$REPO_ROOT/bin/aura-glass-glow" on --style "$B_GLOW" >/dev/null 2>&1 || true
+        fi
+        ok "Enabled window specular glow ($B_GLOW)."
+    fi
+
+    # 5. Apply sound theme
+    if [ "${B_SOUND:-}" = "enabled" ]; then
+        mkdir -p "$CONF_DIR"
+        touch "$CONF_DIR/sound-theme-active"
+        if [ -x "$REPO_ROOT/bin/aura-glass-sound" ]; then
+            AURA_GLASS_CONF="$CONF_DIR" "$REPO_ROOT/bin/aura-glass-sound" enable >/dev/null 2>&1 || true
+        fi
+        ok "Enabled organic glass sound theme."
+    fi
+
+    # Re-splice CSS
+    if [ -x "$REPO_ROOT/bin/aura-glass-apply" ]; then
+        AURA_GLASS_CONF="$CONF_DIR" "$REPO_ROOT/bin/aura-glass-apply" >/dev/null 2>&1 || true
+    fi
+
+    ok "Theme bundle '${B_NAME:-Bundle}' applied successfully."
+}
+
+cmd_list() {
+    printf '%sAvailable Aura Glass Theme Bundles:%s\n\n' "$C_BLD" "$C_OFF"
+    local found=0
+    if [ -d "$BUNDLES_DIR" ]; then
+        for b in "$BUNDLES_DIR"/*.auraglass; do
+            [ -f "$b" ] || continue
+            found=$((found + 1))
+            local bname="${b##*/}"
+            printf '  • %s%s%s (%s)\n' "$C_CYA" "$bname" "$C_OFF" "$b"
+        done
+    fi
+
+    if [ "$found" -eq 0 ]; then
+        printf '  %sNo bundles found in %s.%s\n' "$C_DIM" "$BUNDLES_DIR" "$C_OFF"
+        printf '  Export one with "aura-glass bundle export".\n'
+    fi
+}
+
+main() {
+    [ $# -gt 0 ] || { usage; exit 0; }
+
+    case "$1" in
+        export|save)
+            shift
+            cmd_export "$@"
+            ;;
+        apply|import|load)
+            shift
+            cmd_apply "$@"
+            ;;
+        inspect|info|show)
+            shift
+            cmd_inspect "$@"
+            ;;
+        list|ls)
+            cmd_list
+            ;;
+        -h|--help|help)
+            usage
+            ;;
+        *)
+            printf 'error: unknown command "%s"\n\n' "$1" >&2
+            usage >&2
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"

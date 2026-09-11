@@ -1,0 +1,203 @@
+#!/usr/bin/env bash
+# aura-glass-hud — visionOS-style floating glass pill HUD and notification manager.
+set -euo pipefail
+
+CONF_DIR="${AURA_GLASS_CONF:-${AURA_GLASS_DIR:-${TAHOE_GLASS_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/aura-glass}}}"
+[ -d "$CONF_DIR" ] || [ ! -d "${XDG_CONFIG_HOME:-$HOME/.config}/tahoe-glass" ] || CONF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/tahoe-glass"
+
+C_BLD=$'\033[1m'
+C_CYA=$'\033[1;36m'
+C_GRN=$'\033[1;32m'
+C_YEL=$'\033[1;33m'
+C_RED=$'\033[1;31m'
+C_DIM=$'\033[2m'
+C_OFF=$'\033[0m'
+
+usage() {
+    cat <<'EOF'
+aura-glass-hud — visionOS-style floating glass pill HUD & feedback manager
+
+USAGE:
+    aura-glass hud status
+    aura-glass hud toast <title> [message] [--icon <name>]
+    aura-glass hud mode
+    aura-glass hud accent
+    aura-glass hud profile
+    aura-glass hud glow
+    aura-glass hud -h | --help
+
+SUBCOMMANDS:
+    toast      Display a synchronous transient glass pill notification
+    mode       Trigger HUD toast for the active glass mode
+    accent     Trigger HUD toast for the active accent color
+    profile    Trigger HUD toast for the active visual profile
+    glow       Trigger HUD toast for active window specular glow
+EOF
+}
+
+cmd_toast() {
+    local title="${1:-Aura Glass}"
+    local body="${2:-}"
+    local icon="preferences-desktop-theme"
+
+    # Shift past title & body if present
+    if [ $# -ge 2 ]; then
+        shift 2
+    elif [ $# -ge 1 ]; then
+        shift 1
+    fi
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --icon)
+                icon="${2:-preferences-desktop-theme}"
+                shift 2
+                ;;
+            *) shift ;;
+        esac
+    done
+
+    # Output formatted terminal indicator
+    printf '%s✨ [AURA GLASS HUD]%s %s%s%s' "$C_CYA" "$C_OFF" "$C_BLD" "$title" "$C_OFF"
+    [ -n "$body" ] && printf ' — %s' "$body"
+    printf '\n'
+
+    # If notify-send is available and graphical session is active, send synchronous transient HUD toast
+    if command -v notify-send >/dev/null 2>&1; then
+        notify-send \
+            -a "Aura Glass" \
+            -h string:x-canonical-private-synchronous:aura-glass \
+            -h int:transient:1 \
+            -u low \
+            -i "$icon" \
+            "$title" "$body" 2>/dev/null || true
+    fi
+}
+
+cmd_mode() {
+    local mode="frosted"
+    if [ -f "$CONF_DIR/styling-off" ]; then
+        mode="solid"
+    elif [ -r "$CONF_DIR/glass-mode" ]; then
+        mode="$(head -n 1 "$CONF_DIR/glass-mode" 2>/dev/null || echo "frosted")"
+    fi
+
+    local title="Aura Glass Mode"
+    local desc="Frosted Glass (blur shaders active)"
+    local icon="dialog-information"
+
+    case "$mode" in
+        frosted)
+            desc="Frosted Glass (blur shaders active)"
+            icon="weather-snow"
+            ;;
+        transparent)
+            desc="Transparent Glass (high opacity, no blur)"
+            icon="weather-clear"
+            ;;
+        solid)
+            desc="Solid Mode (classic opaque Adwaita)"
+            icon="view-conceal"
+            ;;
+        eco)
+            desc="Eco Mode (optimized for battery life)"
+            icon="battery-good"
+            ;;
+    esac
+
+    cmd_toast "$title" "$desc" --icon "$icon"
+}
+
+cmd_accent() {
+    local accent="blue"
+    if [ -r "$CONF_DIR/accent" ]; then
+        accent="$(head -n 1 "$CONF_DIR/accent" 2>/dev/null || echo "blue")"
+    fi
+
+    local title="Aura Glass Accent"
+    local hex="#3584e4"
+    case "$accent" in
+        purple) hex="#9141ac" ;;
+        blue)   hex="#3584e4" ;;
+        teal)   hex="#2190a4" ;;
+        green)  hex="#3a944a" ;;
+        yellow) hex="#c88800" ;;
+        orange) hex="#ed5b00" ;;
+        red)    hex="#e62d42" ;;
+        pink)   hex="#d56199" ;;
+        slate)  hex="#6f8396" ;;
+    esac
+
+    cmd_toast "$title" "Active Palette: $accent ($hex)" --icon "applications-graphics"
+}
+
+cmd_profile() {
+    local profile="custom"
+    if [ -r "$CONF_DIR/current-profile" ]; then
+        profile="$(head -n 1 "$CONF_DIR/current-profile" 2>/dev/null || echo "custom")"
+    fi
+
+    local title="Aura Glass Profile"
+    cmd_toast "$title" "Loaded Atmosphere: $profile" --icon "preferences-desktop-display"
+}
+
+cmd_glow() {
+    local status="disabled"
+    local style="subtle"
+    if [ -f "$CONF_DIR/glow" ]; then
+        style="$(head -n 1 "$CONF_DIR/glow" 2>/dev/null || echo "subtle")"
+        status="active ($style)"
+    fi
+
+    local title="Aura Glass Window Glow"
+    cmd_toast "$title" "Specular Rim Light: $status" --icon "weather-clear-night"
+}
+
+cmd_status() {
+    printf '%sAura Glass HUD & OSD Status:%s\n\n' "$C_BLD" "$C_OFF"
+    local notify_avail="${C_RED}not found${C_OFF}"
+    if command -v notify-send >/dev/null 2>&1; then
+        notify_avail="${C_GRN}available (libnotify)${C_OFF}"
+    fi
+
+    printf '  Notification Engine: %s\n' "$notify_avail"
+    printf '  Synchronous Hints:   %sactive (x-canonical-private-synchronous)%s\n' "$C_GRN" "$C_OFF"
+    printf '  Transient Toasts:    %senabled (zero clutter in notification log)%s\n' "$C_GRN" "$C_OFF"
+    printf '  VisionOS Pill OSD:   %sconfigured in shell-50-dialogs.css%s\n' "$C_CYA" "$C_OFF"
+}
+
+main() {
+    [ $# -gt 0 ] || { cmd_status; exit 0; }
+
+    case "$1" in
+        status)
+            cmd_status
+            ;;
+        toast)
+            shift
+            cmd_toast "$@"
+            ;;
+        mode)
+            cmd_mode
+            ;;
+        accent)
+            cmd_accent
+            ;;
+        profile)
+            cmd_profile
+            ;;
+        glow)
+            cmd_glow
+            ;;
+        -h|--help|help)
+            usage
+            ;;
+        *)
+            printf 'error: unknown command "%s"\n\n' "$1" >&2
+            usage >&2
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"

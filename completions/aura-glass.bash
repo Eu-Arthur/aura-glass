@@ -364,13 +364,65 @@ _aura_glass_apps() {
     fi
 }
 
+_aura_glass_hud() {
+    local cur prev subcmds
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+    subcmds="status toast mode accent profile glow -h --help"
+
+    case "$prev" in
+        --icon)
+            return 0
+            ;;
+    esac
+
+    if [ "$COMP_CWORD" -eq 1 ] || { [ "${COMP_WORDS[1]}" = "hud" ] && [ "$COMP_CWORD" -eq 2 ]; }; then
+        COMPREPLY=( $(compgen -W "$subcmds" -- "$cur") )
+        return 0
+    fi
+}
+
+_aura_glass_flatpak() {
+    local cur prev subcmds
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+    subcmds="status sync override revert -h --help"
+
+    if [ "$COMP_CWORD" -eq 1 ] || { [ "${COMP_WORDS[1]}" = "flatpak" ] && [ "$COMP_CWORD" -eq 2 ]; }; then
+        COMPREPLY=( $(compgen -W "$subcmds" -- "$cur") )
+        return 0
+    fi
+}
+
+_aura_glass_bundle() {
+    local cur prev subcmds
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+    subcmds="export apply inspect list -h --help"
+
+    case "$prev" in
+        apply|inspect)
+            compopt -o default 2>/dev/null || true
+            return 0
+            ;;
+    esac
+
+    if [ "$COMP_CWORD" -eq 1 ] || { [ "${COMP_WORDS[1]}" = "bundle" ] && [ "$COMP_CWORD" -eq 2 ]; }; then
+        COMPREPLY=( $(compgen -W "$subcmds" -- "$cur") )
+        return 0
+    fi
+}
+
 _aura_glass_main() {
     local cur prev subcmds
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    subcmds="status profile mode accent adaptive shortcut bench browser terminal daemon doctor settings backup apply gdm update wallpaper glow sound apps ext preview version help"
+    subcmds="status profile mode accent adaptive shortcut bench browser terminal daemon doctor settings backup apply gdm update wallpaper glow sound apps hud flatpak bundle ext preview version help"
 
     if [ "$COMP_CWORD" -eq 1 ]; then
         COMPREPLY=( $(compgen -W "$subcmds -h --help -v --version" -- "$cur") )
@@ -430,6 +482,15 @@ _aura_glass_main() {
         apps|app)
             _aura_glass_apps
             ;;
+        hud)
+            _aura_glass_hud
+            ;;
+        flatpak|flatpaks)
+            _aura_glass_flatpak
+            ;;
+        bundle|bundles)
+            _aura_glass_bundle
+            ;;
         ext)
             _aura_glass_ext
             ;;
@@ -456,7 +517,11 @@ complete -F _aura_glass_wallpaper aura-glass-wallpaper ./bin/aura-glass-wallpape
 complete -F _aura_glass_glow aura-glass-glow ./bin/aura-glass-glow bin/aura-glass-glow
 complete -F _aura_glass_sound aura-glass-sound ./bin/aura-glass-sound bin/aura-glass-sound
 complete -F _aura_glass_apps aura-glass-apps ./bin/aura-glass-apps bin/aura-glass-apps
+complete -F _aura_glass_hud aura-glass-hud ./bin/aura-glass-hud bin/aura-glass-hud
+complete -F _aura_glass_flatpak aura-glass-flatpak ./bin/aura-glass-flatpak bin/aura-glass-flatpak
+complete -F _aura_glass_bundle aura-glass-bundle ./bin/aura-glass-bundle bin/aura-glass-bundle
 complete -F _aura_glass_main aura-glass ./bin/aura-glass bin/aura-glass
+
 
 
 

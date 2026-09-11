@@ -1,4 +1,4 @@
-#compdef aura-glass install.sh uninstall.sh aura-glass-apply aura-glass-ext aura-glass-doctor aura-glass-update-check aura-glass-backup aura-glass-mode aura-glass-profile aura-glass-daemon aura-glass-terminal aura-glass-adaptive aura-glass-bench aura-glass-browser aura-glass-wallpaper aura-glass-glow aura-glass-sound aura-glass-apps
+#compdef aura-glass install.sh uninstall.sh aura-glass-apply aura-glass-ext aura-glass-doctor aura-glass-update-check aura-glass-backup aura-glass-mode aura-glass-profile aura-glass-daemon aura-glass-terminal aura-glass-adaptive aura-glass-bench aura-glass-browser aura-glass-wallpaper aura-glass-glow aura-glass-sound aura-glass-apps aura-glass-hud aura-glass-flatpak aura-glass-bundle
 
 # Zsh completion for Aura Glass suite
 
@@ -193,6 +193,9 @@ _aura_glass() {
         'glow:Active window specular rim light & focus halo'
         'sound:Tactile glass acoustic feedback & sound theme'
         'apps:Frosted glass theming for VS Code & Obsidian'
+        'hud:Trigger visionOS floating glass pill HUD & feedback'
+        'flatpak:Universal Flatpak sandbox theme synchronization'
+        'bundle:Package and share complete portable theme atmospheres'
         'ext:Inspect and manage companion GNOME Shell extensions'
         'version:Print version information'
         'help:Show usage help'
@@ -312,6 +315,24 @@ _aura_glass() {
                 '2:target:(vscode obsidian all)' \
                 '(-h --help)'{-h,--help}'[Show apps help]'
             ;;
+        hud)
+            _arguments -s \
+                '1:hud action:(status toast mode accent profile glow)' \
+                '--icon[Icon name]:icon:(preferences-desktop-theme weather-snow weather-clear view-conceal battery-good applications-graphics)' \
+                '(-h --help)'{-h,--help}'[Show HUD help]'
+            ;;
+        flatpak|flatpaks)
+            _arguments -s \
+                '1:flatpak action:(status sync override revert)' \
+                '(-h --help)'{-h,--help}'[Show Flatpak help]'
+            ;;
+        bundle|bundles)
+            _arguments -s \
+                '1:bundle action:(export apply inspect list)' \
+                '--name[Theme bundle title]:title:' \
+                '--author[Theme bundle author]:author:' \
+                '(-h --help)'{-h,--help}'[Show bundle help]'
+            ;;
         gdm)
             _arguments -s '1:gdm action:(sync)' '(-h --help)'{-h,--help}'[Show GDM help]'
             ;;
@@ -392,6 +413,24 @@ case "${words[1]:t}" in
             '1:apps action:(status apply revert snippet)' \
             '2:target:(vscode obsidian all)' \
             '(-h --help)'{-h,--help}'[Show apps help]'
+        ;;
+    aura-glass-hud)
+        _arguments -s \
+            '1:hud action:(status toast mode accent profile glow)' \
+            '--icon[Icon name]:icon:(preferences-desktop-theme weather-snow weather-clear view-conceal battery-good applications-graphics)' \
+            '(-h --help)'{-h,--help}'[Show HUD help]'
+        ;;
+    aura-glass-flatpak)
+        _arguments -s \
+            '1:flatpak action:(status sync override revert)' \
+            '(-h --help)'{-h,--help}'[Show Flatpak help]'
+        ;;
+    aura-glass-bundle)
+        _arguments -s \
+            '1:bundle action:(export apply inspect list)' \
+            '--name[Theme bundle title]:title:' \
+            '--author[Theme bundle author]:author:' \
+            '(-h --help)'{-h,--help}'[Show bundle help]'
         ;;
     aura-glass-update-check)
         _aura_glass_update_check

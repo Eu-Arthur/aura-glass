@@ -1,0 +1,207 @@
+#!/usr/bin/env bash
+# aura-glass-flatpak — universal Flatpak sandbox theme synchronization and permission overrides.
+set -euo pipefail
+
+CONF_DIR="${AURA_GLASS_CONF:-${AURA_GLASS_DIR:-${TAHOE_GLASS_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/aura-glass}}}"
+[ -d "$CONF_DIR" ] || [ ! -d "${XDG_CONFIG_HOME:-$HOME/.config}/tahoe-glass" ] || CONF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/tahoe-glass"
+
+FLATPAK_VAR_DIR="${AURA_GLASS_FLATPAK_VAR:-$HOME/.var/app}"
+GTK4_SOURCE="${XDG_CONFIG_HOME:-$HOME/.config}/gtk-4.0/gtk.css"
+GTK3_SOURCE="${XDG_CONFIG_HOME:-$HOME/.config}/gtk-3.0/gtk.css"
+
+C_BLD=$'\033[1m'
+C_CYA=$'\033[1;36m'
+C_GRN=$'\033[1;32m'
+C_YEL=$'\033[1;33m'
+C_RED=$'\033[1;31m'
+C_DIM=$'\033[2m'
+C_OFF=$'\033[0m'
+
+ok()  { printf '%s✓%s %s\n' "$C_GRN" "$C_OFF" "$*"; }
+warn() { printf '%s!%s %s\n' "$C_YEL" "$C_OFF" "$*"; }
+
+usage() {
+    cat <<'EOF'
+aura-glass-flatpak — universal Flatpak sandbox theme synchronizer
+
+USAGE:
+    aura-glass flatpak status
+    aura-glass flatpak sync
+    aura-glass flatpak override
+    aura-glass flatpak revert
+    aura-glass flatpak -h | --help
+
+SUBCOMMANDS:
+    status      Inspect installed Flatpak applications, permissions, and theme links
+    sync        Apply global overrides and inject glass stylesheets into sandboxes
+    override    Configure global user filesystem permissions for Flatpak runtimes
+    revert      Remove sandbox stylesheet links and reset global theme overrides
+EOF
+}
+
+cmd_status() {
+    printf '%sFlatpak Sandboxed Applications Glass Status:%s\n\n' "$C_BLD" "$C_OFF"
+
+    local flatpak_installed="${C_RED}not found${C_OFF}"
+    if command -v flatpak >/dev/null 2>&1; then
+        local fp_ver
+        fp_ver="$(flatpak --version 2>/dev/null | awk '{print $2}')"
+        flatpak_installed="${C_GRN}installed (${fp_ver:-ready})${C_OFF}"
+    fi
+    printf '  Flatpak CLI:       %s\n' "$flatpak_installed"
+    printf '  Sandbox Root:      %s%s%s\n' "$C_DIM" "$FLATPAK_VAR_DIR" "$C_OFF"
+
+    # Count apps
+    local app_count=0
+    local themed_count=0
+
+    if [ -d "$FLATPAK_VAR_DIR" ]; then
+        for app_dir in "$FLATPAK_VAR_DIR"/*; do
+            [ -d "$app_dir" ] || continue
+            local app_id="${app_dir##*/}"
+            [ "$app_id" != "*" ] || continue
+            app_count=$((app_count + 1))
+
+            if [ -L "$app_dir/config/gtk-4.0/gtk.css" ] || [ -f "$app_dir/config/gtk-4.0/gtk.css" ]; then
+                themed_count=$((themed_count + 1))
+            fi
+        done
+    fi
+
+    printf '  Installed Apps:    %d detected\n' "$app_count"
+    printf '  Themed Sandboxes:  %s%d / %d%s\n\n' "$C_CYA" "$themed_count" "$app_count" "$C_OFF"
+
+    if [ "$app_count" -gt 0 ]; then
+        printf '%sDetected Sandboxed Apps:%s\n' "$C_BLD" "$C_OFF"
+        for app_dir in "$FLATPAK_VAR_DIR"/*; do
+            [ -d "$app_dir" ] || continue
+            local app_id="${app_dir##*/}"
+            [ "$app_id" != "*" ] || continue
+            local status="${C_DIM}not linked${C_OFF}"
+            if [ -L "$app_dir/config/gtk-4.0/gtk.css" ] || [ -f "$app_dir/config/gtk-4.0/gtk.css" ]; then
+                status="${C_GRN}frosted glass active${C_OFF}"
+            fi
+            printf '  • %-32s [%s]\n' "$app_id" "$status"
+        done
+    fi
+}
+
+cmd_override() {
+    if ! command -v flatpak >/dev/null 2>&1; then
+        warn "flatpak command not found. Skipping global runtime override."
+        return 0
+    fi
+
+    flatpak override --user \
+        --filesystem=xdg-config/gtk-4.0:ro \
+        --filesystem=xdg-config/gtk-3.0:ro \
+        --filesystem=~/.icons:ro \
+        --filesystem=xdg-data/icons:ro \
+        --env=GTK_THEME=Aura-Glass >/dev/null 2>&1 || true
+
+    ok "Applied global Flatpak theme filesystem overrides."
+}
+
+cmd_sync() {
+    cmd_override
+
+    local count=0
+    if [ ! -d "$FLATPAK_VAR_DIR" ]; then
+        mkdir -p "$FLATPAK_VAR_DIR"
+    fi
+
+    for app_dir in "$FLATPAK_VAR_DIR"/*; do
+        [ -d "$app_dir" ] || continue
+        local app_id="${app_dir##*/}"
+        [ "$app_id" != "*" ] || continue
+
+        local gtk4_dir="$app_dir/config/gtk-4.0"
+        local gtk3_dir="$app_dir/config/gtk-3.0"
+        mkdir -p "$gtk4_dir" "$gtk3_dir"
+
+        # Link GTK 4
+        if [ -f "$GTK4_SOURCE" ]; then
+            if [ -f "$gtk4_dir/gtk.css" ] && [ ! -L "$gtk4_dir/gtk.css" ]; then
+                cp "$gtk4_dir/gtk.css" "$gtk4_dir/gtk.css.aurabackup" 2>/dev/null || true
+            fi
+            ln -sf "$GTK4_SOURCE" "$gtk4_dir/gtk.css"
+        fi
+
+        # Link GTK 3
+        if [ -f "$GTK3_SOURCE" ]; then
+            if [ -f "$gtk3_dir/gtk.css" ] && [ ! -L "$gtk3_dir/gtk.css" ]; then
+                cp "$gtk3_dir/gtk.css" "$gtk3_dir/gtk.css.aurabackup" 2>/dev/null || true
+            fi
+            ln -sf "$GTK3_SOURCE" "$gtk3_dir/gtk.css"
+        fi
+
+        count=$((count + 1))
+    done
+
+    ok "Synchronized Aura Glass stylesheets to $count Flatpak application sandboxes."
+}
+
+cmd_revert() {
+    local count=0
+    if [ -d "$FLATPAK_VAR_DIR" ]; then
+        for app_dir in "$FLATPAK_VAR_DIR"/*; do
+            [ -d "$app_dir" ] || continue
+            local app_id="${app_dir##*/}"
+            [ "$app_id" != "*" ] || continue
+
+            # Remove GTK 4 link or restore backup
+            local gtk4_file="$app_dir/config/gtk-4.0/gtk.css"
+            if [ -L "$gtk4_file" ]; then
+                rm -f "$gtk4_file"
+                if [ -f "$gtk4_file.aurabackup" ]; then
+                    mv "$gtk4_file.aurabackup" "$gtk4_file"
+                fi
+                count=$((count + 1))
+            fi
+
+            # Remove GTK 3 link or restore backup
+            local gtk3_file="$app_dir/config/gtk-3.0/gtk.css"
+            if [ -L "$gtk3_file" ]; then
+                rm -f "$gtk3_file"
+                if [ -f "$gtk3_file.aurabackup" ]; then
+                    mv "$gtk3_file.aurabackup" "$gtk3_file"
+                fi
+            fi
+        done
+    fi
+
+    if command -v flatpak >/dev/null 2>&1; then
+        flatpak override --user --reset >/dev/null 2>&1 || true
+    fi
+
+    ok "Reverted Flatpak theme overrides and removed links from $count apps."
+}
+
+main() {
+    [ $# -gt 0 ] || { cmd_status; exit 0; }
+
+    case "$1" in
+        status)
+            cmd_status
+            ;;
+        sync|apply)
+            cmd_sync
+            ;;
+        override)
+            cmd_override
+            ;;
+        revert|reset)
+            cmd_revert
+            ;;
+        -h|--help|help)
+            usage
+            ;;
+        *)
+            printf 'error: unknown command "%s"\n\n' "$1" >&2
+            usage >&2
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"

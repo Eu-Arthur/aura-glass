@@ -61,6 +61,9 @@ ${C_BLD}COMMANDS:${C_OFF}
     ${C_CYA}glow${C_OFF} [on|off|status]    Active window specular rim light & focus halo
     ${C_CYA}sound${C_OFF} [theme|test|play] Organic glass acoustic sound theme & feedback
     ${C_CYA}apps${C_OFF} [vscode|obsidian]  Frosted glass theming for VS Code & Obsidian
+    ${C_CYA}hud${C_OFF} [toast|mode|accent] Trigger visionOS floating glass pill HUD & feedback
+    ${C_CYA}flatpak${C_OFF} [status|sync]    Universal Flatpak sandbox theme synchronization
+    ${C_CYA}bundle${C_OFF} [export|apply]   Package and share complete portable theme atmospheres
     ${C_CYA}ext${C_OFF} [list|enable]      Inspect and manage companion GNOME Shell extensions
     ${C_CYA}help${C_OFF}, -h, --help       Show this help message
     ${C_CYA}version${C_OFF}, -v          Print version information
@@ -564,6 +567,15 @@ main() {
             ;;
         apps|app)
             exec "$BIN_DIR/aura-glass-apps" "$@"
+            ;;
+        hud)
+            exec "$BIN_DIR/aura-glass-hud" "$@"
+            ;;
+        flatpak|flatpaks)
+            exec "$BIN_DIR/aura-glass-flatpak" "$@"
+            ;;
+        bundle|bundles)
+            exec "$BIN_DIR/aura-glass-bundle" "$@"
             ;;
         preview)
             exec "$BIN_DIR/aura-glass-preview" "$@"
