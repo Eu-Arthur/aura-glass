@@ -103,6 +103,15 @@ if [ "$gpu_found" = 0 ]; then
     fi
 fi
 
+if [ "$session" = "wayland" ] && have gsettings; then
+    mutter_exp="$(gsettings get org.gnome.mutter experimental-features 2>/dev/null || echo "@as []")"
+    if [[ "$mutter_exp" =~ "variable-refresh-rate" ]]; then
+        record "Hardware" "Variable Refresh Rate (VRR)" "OK" "Mutter VRR enabled (power saving on static content)"
+    else
+        record "Hardware" "Variable Refresh Rate (VRR)" "INFO" "VRR not enabled in Mutter" "To save power on high-refresh displays: gsettings set org.gnome.mutter experimental-features \"['variable-refresh-rate']\""
+    fi
+fi
+
 # 2. Required Commands
 for cmd in "${REQUIRED_CMDS[@]}"; do
     if [ "$cmd" = "sassc" ]; then
@@ -178,15 +187,16 @@ check_ext() {
     if [ "$installed" = 1 ] && [ "$enabled" = 1 ]; then
         record "Extensions" "$label" "OK" "installed and enabled"
     elif [ "$installed" = 1 ] && [ "$enabled" = 0 ]; then
-        record "Extensions" "$label" "WARN" "installed but not enabled" "Enable with: gnome-extensions enable $uuid"
+        record "Extensions" "$label" "WARN" "installed but disabled" "Enable with: gnome-extensions enable $uuid"
     else
-        record "Extensions" "$label" "WARN" "not installed" "Run ./install.sh to install core extensions."
+        record "Extensions" "$label" "WARN" "extension missing" "Run ./install.sh to deploy required extensions."
     fi
 }
 
-check_ext "$BMS_UUID" "Blur My Shell"
+check_ext "blur-my-shell@aunetx" "Blur My Shell"
 check_ext "openbar@neuromorph" "Open Bar"
-check_ext "custom-osd@neuromorph" "Custom OSD"
+check_ext "just-perfection-desktop@just-perfection" "Just Perfection"
+check_ext "custom-osd@hermes8716.github.com" "Custom OSD"
 check_ext "user-theme@gnome-shell-extensions.gcampax.github.com" "User Themes"
 
 # 6. Systemd User Units
@@ -200,6 +210,15 @@ check_service() {
     enabled="$(systemctl --user is-enabled "$unit" 2>/dev/null || echo "disabled")"
     if [ "$active" = "active" ]; then
         record "Services" "$unit" "OK" "active ($enabled)"
+    elif [ "$unit" = "aura-glass-panel-blur.service" ] || [ "$unit" = "aura-glass-icon-sync.service" ]; then
+        if command -v gnome-extensions >/dev/null 2>&1 \
+            && gnome-extensions info "aura-glass-blur@aura-glass.local" 2>/dev/null | grep -q "State: ACTIVE"; then
+            record "Services" "$unit" "OK" "handled natively by aura-glass-blur extension"
+        elif [ "$enabled" = "enabled" ]; then
+            record "Services" "$unit" "WARN" "enabled but inactive" "Start with: systemctl --user start $unit"
+        else
+            record "Services" "$unit" "INFO" "not enabled / inactive"
+        fi
     elif [ "$enabled" = "enabled" ]; then
         record "Services" "$unit" "WARN" "enabled but inactive" "Start with: systemctl --user start $unit"
     else

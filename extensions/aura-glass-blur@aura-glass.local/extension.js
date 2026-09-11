@@ -168,6 +168,9 @@ export default class AuraGlassBlurExtension extends Extension {
         this._inhibitReasons = new Set();
         this._initInhibitWatchers();
 
+        // Pause blur effects on minimized windows
+        this._initMinimizationWatcher();
+
         // Native icon synchronization following light/dark preference
         this._initIconSync();
 
@@ -190,6 +193,7 @@ export default class AuraGlassBlurExtension extends Extension {
         this._settings = null;
 
         this._destroyInhibitWatchers();
+        this._destroyMinimizationWatcher();
         this._destroyIconSync();
         this._destroyAutoEcoWatcher();
 
@@ -224,6 +228,7 @@ export default class AuraGlassBlurExtension extends Extension {
     // panel actor against monitor geometry, which is in flux at login and monitor
     // plug/unplug. Rebuilds the actor once settled (3s) without external daemons.
     _schedulePanelBlurRebuild() {
+        this._checkLidState();
         if (this._panelBlurTimer) {
             GLib.source_remove(this._panelBlurTimer);
             this._panelBlurTimer = 0;
@@ -778,12 +783,20 @@ export default class AuraGlassBlurExtension extends Extension {
                     const onBatVal = changed.lookup_value('OnBattery', null);
                     if (onBatVal !== null)
                         this._onPowerChanged(onBatVal.unpack(), false);
+
+                    const lidVal = changed.lookup_value('LidIsClosed', null);
+                    if (lidVal !== null)
+                        this._onLidChanged(lidVal.unpack());
                 }
             );
 
             const onBatProp = this._upowerProxy.get_cached_property('OnBattery');
             if (onBatProp !== null)
                 this._onPowerChanged(onBatProp.unpack(), true);
+
+            const lidProp = this._upowerProxy.get_cached_property('LidIsClosed');
+            if (lidProp !== null)
+                this._onLidChanged(lidProp.unpack());
         } catch (_) {
             this._upowerProxy = null;
         }
@@ -831,6 +844,99 @@ export default class AuraGlassBlurExtension extends Extension {
             }
 
             this._removeInhibitReason('battery', isInitial);
+        }
+    }
+
+    _onLidChanged(isClosed) {
+        const monitors = Main.layoutManager?.monitors || [];
+        const hasExternal = monitors.length > 1;
+        if (isClosed && !hasExternal)
+            this._addInhibitReason('lid-closed', false);
+        else
+            this._removeInhibitReason('lid-closed', false);
+    }
+
+    _checkLidState() {
+        if (!this._upowerProxy)
+            return;
+        const lidProp = this._upowerProxy.get_cached_property('LidIsClosed');
+        if (lidProp !== null)
+            this._onLidChanged(lidProp.unpack());
+    }
+
+    // ---- Minimized Window Blur Shader Suspension ---------------------------
+
+    _initMinimizationWatcher() {
+        this._minWindowCreatedId = 0;
+        this._minSignals = new Map();
+
+        if (global.display) {
+            this._minWindowCreatedId = global.display.connect(
+                'window-created', (_d, window) => this._trackMinimization(window));
+        }
+
+        for (const actor of global.get_window_actors()) {
+            const w = actor.get_meta_window();
+            if (w)
+                this._trackMinimization(w);
+        }
+    }
+
+    _destroyMinimizationWatcher() {
+        if (this._minWindowCreatedId && global.display) {
+            global.display.disconnect(this._minWindowCreatedId);
+            this._minWindowCreatedId = 0;
+        }
+        if (this._minSignals) {
+            for (const [window, ids] of this._minSignals) {
+                for (const id of ids)
+                    window.disconnect(id);
+            }
+            this._minSignals.clear();
+            this._minSignals = null;
+        }
+    }
+
+    _trackMinimization(window) {
+        if (!window || !this._minSignals || this._minSignals.has(window) || window.is_override_redirect())
+            return;
+
+        const unmanagedId = window.connect('unmanaged', () => {
+            this._untrackMinimization(window);
+        });
+
+        const notifyMinId = window.connect('notify::minimized', () => {
+            this._updateWindowBlur(window);
+        });
+
+        this._minSignals.set(window, [unmanagedId, notifyMinId]);
+        this._updateWindowBlur(window);
+    }
+
+    _untrackMinimization(window) {
+        if (!this._minSignals)
+            return;
+        const ids = this._minSignals.get(window);
+        if (ids) {
+            for (const id of ids)
+                window.disconnect(id);
+            this._minSignals.delete(window);
+        }
+    }
+
+    _updateWindowBlur(window) {
+        if (!window)
+            return;
+        const isMinimized = window.minimized || (typeof window.is_hidden === 'function' && window.is_hidden());
+        const blurActor = window.blur_actor;
+        if (blurActor)
+            blurActor.opacity = isMinimized ? 0 : 255;
+
+        const pipeline = window.bg_manager?._bms_pipeline;
+        if (pipeline) {
+            if (pipeline.effect)
+                pipeline.effect.set_enabled(!isMinimized);
+            pipeline.effects?.forEach(effect => effect.set_enabled(!isMinimized));
         }
     }
 }

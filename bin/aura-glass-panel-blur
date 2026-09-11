@@ -48,6 +48,13 @@ rebuild() {
 # rebuild the same way a layout change does.
 rebuild || true
 
+# If aura-glass-blur extension is active, it handles panel blur rebuilds
+# natively inside GNOME Shell via layoutManager signals. Exit cleanly
+# instead of running a redundant background monitor process.
+if is_handled_by_extension; then
+    exit 0
+fi
+
 # One line per signal; each is a layout change worth rebuilding for. gdbus
 # monitor never exits, so this is the whole loop.
 gdbus monitor --session --dest org.gnome.Mutter.DisplayConfig \

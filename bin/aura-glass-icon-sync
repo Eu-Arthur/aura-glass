@@ -75,6 +75,13 @@ apply() {
 apply
 [ "${1:-}" = "--once" ] && exit 0
 
+# If aura-glass-blur extension is active, it handles icon sync natively
+# inside GNOME Shell via GSettings signals. Exit cleanly instead of running
+# a redundant background monitor process.
+if is_handled_by_extension; then
+    exit 0
+fi
+
 # Terminate background jobs cleanly on exit
 trap 'kill $(jobs -p) 2>/dev/null || true' EXIT INT TERM
 
