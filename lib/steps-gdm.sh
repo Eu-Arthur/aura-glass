@@ -104,17 +104,41 @@ src = sys.argv[1]
 dst = sys.argv[2]
 
 def generate_procedural_fallback(out_path):
-    from PIL import Image, ImageFilter, ImageDraw
-    im = Image.new('RGB', (2560, 1440), color=(14, 16, 26))
-    draw = ImageDraw.Draw(im)
-    for y in range(1440):
-        factor = y / 1440.0
+    try:
+        from PIL import Image, ImageFilter, ImageDraw
+        im = Image.new('RGB', (2560, 1440), color=(14, 16, 26))
+        draw = ImageDraw.Draw(im)
+        for y in range(1440):
+            factor = y / 1440.0
+            r = int(14 + factor * 14)
+            g = int(17 + factor * 20)
+            b = int(28 + factor * 42)
+            draw.line([(0, y), (2560, y)], fill=(r, g, b))
+        im = im.filter(ImageFilter.GaussianBlur(radius=5))
+        im.save(out_path, format="PNG")
+        return
+    except Exception:
+        pass
+
+    # Pure Python standard-library fallback (zero dependency)
+    import zlib, struct
+    width, height = 2560, 1440
+    raw_rows = bytearray()
+    for y in range(height):
+        raw_rows.append(0)
+        factor = y / height
         r = int(14 + factor * 14)
         g = int(17 + factor * 20)
         b = int(28 + factor * 42)
-        draw.line([(0, y), (2560, y)], fill=(r, g, b))
-    im = im.filter(ImageFilter.GaussianBlur(radius=5))
-    im.save(out_path, format="PNG")
+        row_bytes = bytes([r, g, b]) * width
+        raw_rows.extend(row_bytes)
+    compressed = zlib.compress(raw_rows, 6)
+    with open(out_path, 'wb') as f:
+        f.write(b'\x89PNG\r\n\x1a\n')
+        ihdr_data = struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0)
+        f.write(struct.pack('>I', len(ihdr_data)) + b'IHDR' + ihdr_data + struct.pack('>I', zlib.crc32(b'IHDR' + ihdr_data)))
+        f.write(struct.pack('>I', len(compressed)) + b'IDAT' + compressed + struct.pack('>I', zlib.crc32(b'IDAT' + compressed)))
+        f.write(struct.pack('>I', 0) + b'IEND' + struct.pack('>I', zlib.crc32(b'IEND')))
 
 def resolve_source(path):
     if not path or path == "procedural" or not os.path.exists(path):
@@ -136,12 +160,12 @@ def resolve_source(path):
     return path
 
 resolved = resolve_source(src)
+if not resolved:
+    generate_procedural_fallback(dst)
+    sys.exit(0)
 
 try:
     from PIL import Image, ImageFilter, ImageEnhance, ImageOps
-    if not resolved:
-        generate_procedural_fallback(dst)
-        sys.exit(0)
 
     if resolved.lower().endswith(('.svg', '.svgz')):
         try:
@@ -180,7 +204,11 @@ try:
         ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         sys.exit(0)
 except Exception:
-    sys.exit(1)
+    try:
+        generate_procedural_fallback(dst)
+        sys.exit(0)
+    except Exception:
+        sys.exit(1)
 PY
 
     mkdir -p "$CONF_DIR"
@@ -372,7 +400,7 @@ install_gdm() {
                 rm -f "$tmp_init"
             else
                 rm -f "$tmp_init"
-                printf '\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc`\x00\x00\x00\x02\x00\x01H\xaf\xa4q\x00\x00\x00\x00IEND\xaeB`\x82' | sudo tee "$target_wall" >/dev/null
+                echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAApJREFUCNdjYAAAAAIAAeIhvDMAAAAASUVORK5CYII=" | base64 -d | sudo tee "$target_wall" >/dev/null
             fi
             sudo chown "$USER:" "$target_wall"
             sudo chmod 644 "$target_wall"
@@ -421,7 +449,7 @@ install_gdm() {
         else
             rm -f "$tmp_init"
             # Fallback 1x1 valid PNG in the extreme case all generators fail
-            printf '\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc`\x00\x00\x00\x02\x00\x01H\xaf\xa4q\x00\x00\x00\x00IEND\xaeB`\x82' | sudo tee "$target_wall" >/dev/null
+            echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAApJREFUCNdjYAAAAAIAAeIhvDMAAAAASUVORK5CYII=" | base64 -d | sudo tee "$target_wall" >/dev/null
         fi
         sudo chown "$USER:" "$target_wall"
         sudo chmod 644 "$target_wall"

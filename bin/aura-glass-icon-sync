@@ -72,7 +72,7 @@ apply() {
     gsettings set org.gnome.desktop.interface icon-theme "$want"
 }
 
-apply
+apply "$@"
 [ "${1:-}" = "--once" ] && exit 0
 
 # If aura-glass-blur extension is active, it handles icon sync natively
@@ -89,5 +89,5 @@ trap 'kill $(jobs -p) 2>/dev/null || true' EXIT INT TERM
 # whole loop. Any line is a colour-scheme change worth reacting to.
 gsettings monitor org.gnome.desktop.interface color-scheme 2>/dev/null | while read -r _; do
     while read -r -t 1 _; do :; done
-    apply || true
+    apply --background || true
 done

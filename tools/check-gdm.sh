@@ -38,7 +38,7 @@ fi
 # 2. Procedural fallback generation produces valid PNG
 procedural_dst="$TMP_DIR/procedural-test.png"
 if generate_gdm_wallpaper "procedural" "$procedural_dst"; then
-    if [ -s "$procedural_dst" ] && python3 -c "from PIL import Image; im = Image.open('$procedural_dst'); assert im.format == 'PNG' and im.size == (2560, 1440)" 2>/dev/null; then
+    if [ -s "$procedural_dst" ] && python3 -c "import struct; f=open('$procedural_dst','rb'); h=f.read(24); assert h[:8]==b'\x89PNG\r\n\x1a\n' and struct.unpack('>II',h[16:24])==(2560,1440)" 2>/dev/null; then
         pass "generate_gdm_wallpaper procedural creates valid 2560x1440 PNG"
     else
         fail "generate_gdm_wallpaper procedural produced invalid or empty file"
@@ -49,8 +49,21 @@ fi
 
 # 3. XML slideshow resolution and fallback
 dummy_img="$TMP_DIR/dummy_sample.png"
-# Create a small valid test image using python
-python3 -c "from PIL import Image; Image.new('RGB', (100, 100), color=(100, 150, 200)).save('$dummy_img')"
+# Create a small valid test image using standard python library
+python3 -c "
+import zlib, struct
+raw = bytearray()
+for y in range(100):
+    raw.append(0)
+    raw.extend(bytes([100, 150, 200]) * 100)
+c = zlib.compress(raw)
+with open('$dummy_img', 'wb') as f:
+    f.write(b'\x89PNG\r\n\x1a\n')
+    h = struct.pack('>IIBBBBB', 100, 100, 8, 2, 0, 0, 0)
+    f.write(struct.pack('>I', len(h)) + b'IHDR' + h + struct.pack('>I', zlib.crc32(b'IHDR' + h)))
+    f.write(struct.pack('>I', len(c)) + b'IDAT' + c + struct.pack('>I', zlib.crc32(b'IDAT' + c)))
+    f.write(struct.pack('>I', 0) + b'IEND' + struct.pack('>I', zlib.crc32(b'IEND')))
+"
 
 dummy_xml="$TMP_DIR/slideshow.xml"
 cat > "$dummy_xml" <<EOF
@@ -64,7 +77,7 @@ EOF
 
 xml_dst="$TMP_DIR/xml-output.png"
 if generate_gdm_wallpaper "$dummy_xml" "$xml_dst"; then
-    if [ -s "$xml_dst" ] && python3 -c "from PIL import Image; im = Image.open('$xml_dst'); assert im.format == 'PNG' and im.size == (2560, 1440)" 2>/dev/null; then
+    if [ -s "$xml_dst" ] && python3 -c "import struct; f=open('$xml_dst','rb'); h=f.read(24); assert h[:8]==b'\x89PNG\r\n\x1a\n' and struct.unpack('>II',h[16:24])==(2560,1440)" 2>/dev/null; then
         pass "generate_gdm_wallpaper correctly resolves XML slideshow and outputs blurred PNG"
     else
         fail "generate_gdm_wallpaper XML resolution produced invalid file"

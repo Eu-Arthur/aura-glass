@@ -72,6 +72,9 @@ cmd_version() {
     elif [ -f "$REPO_ROOT/VERSION" ]; then
         ver="$(cat "$REPO_ROOT/VERSION" 2>/dev/null || echo "release")"
     fi
+    if [ "$ver" != "unknown" ] && [ "$ver" != "release" ] && [[ ! "$ver" =~ ^v ]]; then
+        ver="v$ver"
+    fi
     printf 'aura-glass %s\n' "$ver"
 }
 
@@ -259,7 +262,7 @@ cmd_shortcut() {
             local current_list
             current_list="$(gsettings get org.gnome.settings-daemon.plugins.media-keys custom-keybindings 2>/dev/null || echo "@as []")"
             printf 'Aura Glass Keyboard Shortcuts:\n'
-            if [[ "$current_list" =~ "$path_toggle" ]]; then
+            if [[ "$current_list" == *"$path_toggle"* ]]; then
                 local b_toggle
                 b_toggle="$(gsettings get "$schema:$path_toggle" binding 2>/dev/null || echo "''")"
                 printf '  ✓ Toggle Glass Mode: %s  (aura-glass mode toggle)\n' "${b_toggle//\'/}"
@@ -267,7 +270,7 @@ cmd_shortcut() {
                 printf '  ○ Toggle Glass Mode: not installed (recommended: <Super><Alt>g)\n'
             fi
 
-            if [[ "$current_list" =~ "$path_settings" ]]; then
+            if [[ "$current_list" == *"$path_settings"* ]]; then
                 local b_set
                 b_set="$(gsettings get "$schema:$path_settings" binding 2>/dev/null || echo "''")"
                 printf '  ✓ Open Settings:     %s  (aura-glass settings)\n' "${b_set//\'/}"
@@ -291,14 +294,14 @@ cmd_shortcut() {
             local current_list
             current_list="$(gsettings get org.gnome.settings-daemon.plugins.media-keys custom-keybindings 2>/dev/null || echo "[]")"
             local new_list="$current_list"
-            if [[ ! "$new_list" =~ "$path_toggle" ]]; then
+            if [[ "$new_list" != *"$path_toggle"* ]]; then
                 if [ "$new_list" = "@as []" ] || [ "$new_list" = "[]" ] || [ "$new_list" = "@as[]" ]; then
                     new_list="['$path_toggle']"
                 else
                     new_list="${new_list%]}, '$path_toggle']"
                 fi
             fi
-            if [[ ! "$new_list" =~ "$path_settings" ]]; then
+            if [[ "$new_list" != *"$path_settings"* ]]; then
                 if [ "$new_list" = "@as []" ] || [ "$new_list" = "[]" ] || [ "$new_list" = "@as[]" ]; then
                     new_list="['$path_settings']"
                 else

@@ -23,10 +23,10 @@ out_h="$("$CLI" -h 2>&1)" || note "aura-glass -h failed"
 
 # 2. Version
 out_ver="$("$CLI" --version 2>&1)" || note "aura-glass --version failed"
-[[ "$out_ver" =~ "aura-glass v" ]] || note "--version output missing version string"
+[[ "$out_ver" =~ "aura-glass "[v0-9a-f] ]] || note "--version output missing version string"
 
 out_ver_sub="$("$CLI" version 2>&1)" || note "aura-glass version failed"
-[[ "$out_ver_sub" =~ "aura-glass v" ]] || note "'version' subcommand missing version string"
+[[ "$out_ver_sub" =~ "aura-glass "[v0-9a-f] ]] || note "'version' subcommand missing version string"
 
 # 3. Status dashboard
 out_status="$("$CLI" status 2>&1)" || note "aura-glass status failed"

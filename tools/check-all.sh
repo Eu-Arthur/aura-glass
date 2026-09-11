@@ -7,6 +7,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TOOLS_DIR="$REPO_ROOT/tools"
+export PATH="$HOME/.local/bin:$PATH"
 
 C_BLD=$'\033[1m'
 C_RED=$'\033[1;31m'
