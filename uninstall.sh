@@ -355,7 +355,8 @@ if [ -f "$CONF_DIR/rounded-blur" ]; then
 fi
 
 step "Removing aura-glass itself"
-run rm -f "$HOME/.local/bin/aura-glass-apply" "$HOME/.local/bin/aura-glass-icon-sync" \
+run rm -f "$HOME/.local/bin/aura-glass" \
+          "$HOME/.local/bin/aura-glass-apply" "$HOME/.local/bin/aura-glass-icon-sync" \
           "$HOME/.local/bin/aura-glass-panel-blur" "$HOME/.local/bin/aura-glass-gdm-sync" \
           "$HOME/.local/bin/aura-glass-settings" \
           "$HOME/.local/bin/aura-glass-preview" \

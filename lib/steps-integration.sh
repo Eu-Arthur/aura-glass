@@ -142,7 +142,7 @@ install_panel_blur_unit() {
 }
 
 install_cli_tools() {
-    for tool in aura-glass-ext aura-glass-doctor aura-glass-backup aura-glass-mode; do
+    for tool in aura-glass aura-glass-ext aura-glass-doctor aura-glass-backup aura-glass-mode; do
         if [ -f "$REPO_ROOT/bin/$tool" ]; then
             run install -Dm755 "$REPO_ROOT/bin/$tool" "$HOME/.local/bin/$tool"
         fi

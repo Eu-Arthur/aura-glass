@@ -1,0 +1,221 @@
+#!/usr/bin/env bash
+# aura-glass — unified CLI controller and status dashboard.
+#
+# Provides a clean, modern single-entrypoint interface to all aura-glass tools:
+#   aura-glass status          Show visual status dashboard
+#   aura-glass mode [cmd]      Query or change glass transparency mode
+#   aura-glass doctor          System health checks and diagnostics
+#   aura-glass settings        Launch graphical settings window
+#   aura-glass backup [cmd]    Create, restore, or manage configuration backups
+#   aura-glass apply           Re-splice CSS stylesheets and re-read config
+#   aura-glass gdm [sync]      Sync wallpaper and monitors to GDM login screen
+#   aura-glass update          Check for updates
+#   aura-glass ext [cmd]       Manage GNOME Shell extensions
+set -euo pipefail
+
+REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+BIN_DIR="$REPO_ROOT/bin"
+CONF_DIR="${AURA_GLASS_CONF:-$HOME/.config/aura-glass}"
+[ -d "$CONF_DIR" ] || [ ! -d "$HOME/.config/tahoe-glass" ] || CONF_DIR="$HOME/.config/tahoe-glass"
+
+# Terminal styling
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+    C_BLD=$'\033[1m'
+    C_DIM=$'\033[2m'
+    C_CYA=$'\033[1;36m'
+    C_BLU=$'\033[1;34m'
+    C_GRN=$'\033[1;32m'
+    C_YEL=$'\033[1;33m'
+    C_RED=$'\033[1;31m'
+    C_MAG=$'\033[1;35m'
+    C_OFF=$'\033[0m'
+else
+    C_BLD='' C_DIM='' C_CYA='' C_BLU='' C_GRN='' C_YEL='' C_RED='' C_MAG='' C_OFF=''
+fi
+
+usage() {
+    cat <<EOF
+${C_BLD}Aura Glass${C_OFF} — macOS / visionOS Frosted Glass Desktop for GNOME
+
+${C_BLD}USAGE:${C_OFF}
+    aura-glass <COMMAND> [OPTIONS]
+
+${C_BLD}COMMANDS:${C_OFF}
+    ${C_CYA}status${C_OFF}                Display interactive desktop and glass status summary
+    ${C_CYA}mode${C_OFF} [get|set|toggle]   Manage glass mode (frosted, transparent, solid, eco, auto)
+    ${C_CYA}doctor${C_OFF}                Run full system health checks and diagnostics
+    ${C_CYA}settings${C_OFF}              Launch the Libadwaita settings application
+    ${C_CYA}backup${C_OFF} [create|restore] Create, restore, export, or import configuration backups
+    ${C_CYA}apply${C_OFF}                 Re-splice CSS stylesheets and refresh active theme
+    ${C_CYA}gdm${C_OFF} [sync]             Sync desktop wallpaper and primary monitor to GDM
+    ${C_CYA}update${C_OFF}                Check for newer aura-glass release
+    ${C_CYA}ext${C_OFF} [list|enable]      Inspect and manage companion GNOME Shell extensions
+    ${C_CYA}help${C_OFF}, -h, --help       Show this help message
+    ${C_CYA}version${C_OFF}, -v          Print version information
+
+${C_BLD}EXAMPLES:${C_OFF}
+    aura-glass status
+    aura-glass mode toggle
+    aura-glass mode frosted
+    aura-glass doctor --json
+    aura-glass backup create
+EOF
+}
+
+cmd_version() {
+    local ver="unknown"
+    if [ -d "$REPO_ROOT/.git" ]; then
+        ver="$(git -C "$REPO_ROOT" describe --tags --always 2>/dev/null || echo "git")"
+    elif [ -f "$REPO_ROOT/VERSION" ]; then
+        ver="$(cat "$REPO_ROOT/VERSION" 2>/dev/null || echo "release")"
+    fi
+    printf 'aura-glass %s\n' "$ver"
+}
+
+cmd_status() {
+    local ver
+    ver="$(git -C "$REPO_ROOT" describe --tags --always 2>/dev/null || echo "v0.1.7")"
+
+    # 1. Mode
+    local mode="frosted"
+    if [ -f "$CONF_DIR/styling-off" ]; then
+        mode="solid"
+    elif [ -r "$CONF_DIR/glass-mode" ]; then
+        mode="$(head -n 1 "$CONF_DIR/glass-mode" 2>/dev/null || echo "frosted")"
+    fi
+
+    local mode_label="$mode"
+    case "$mode" in
+        frosted)     mode_label="${C_CYA}Frosted Glass${C_OFF} (full blur shaders)" ;;
+        transparent) mode_label="${C_BLU}Transparent${C_OFF} (translucent, no blur)" ;;
+        solid)       mode_label="${C_DIM}Solid Mode${C_OFF} (opaque surfaces)" ;;
+    esac
+
+    # 2. Theme & Accent
+    local theme="Aura-Glass"
+    if command -v gsettings >/dev/null 2>&1; then
+        local user_theme
+        user_theme="$(gsettings get org.gnome.shell.extensions.user-theme name 2>/dev/null || true)"
+        user_theme="${user_theme//\'/}"
+        [ -n "$user_theme" ] && theme="$user_theme"
+    fi
+
+    local accent="Default"
+    if [ -r "$CONF_DIR/accent" ]; then
+        accent="$(head -n 1 "$CONF_DIR/accent" 2>/dev/null || echo "Default")"
+    fi
+
+    # 3. Power & Battery
+    local power_info="AC Connected"
+    if [ -d /sys/class/power_supply ]; then
+        for ps in /sys/class/power_supply/*; do
+            if [ -f "$ps/type" ] && [ "$(cat "$ps/type" 2>/dev/null)" = "Battery" ]; then
+                if [ -f "$ps/status" ] && [ "$(cat "$ps/status" 2>/dev/null)" = "Discharging" ]; then
+                    local cap=""
+                    [ -f "$ps/capacity" ] && cap=" ($(cat "$ps/capacity" 2>/dev/null)%)"
+                    power_info="${C_YEL}Battery Discharging${C_OFF}${cap}"
+                else
+                    power_info="${C_GRN}AC Connected / Charging${C_OFF}"
+                fi
+                break
+            fi
+        done
+    fi
+
+    # Auto-Eco status
+    local auto_eco="${C_GRN}enabled${C_OFF}"
+    if [ -f "$CONF_DIR/no-auto-eco" ]; then
+        auto_eco="${C_DIM}disabled${C_OFF}"
+    fi
+
+    # 4. Blur Inhibition Status
+    local blur_state="${C_GRN}Active${C_OFF}"
+    if [ -f "$CONF_DIR/perf-inhibited" ]; then
+        blur_state="${C_YEL}Paused (inhibit active)${C_OFF}"
+    elif [ "$mode" = "solid" ]; then
+        blur_state="${C_DIM}Inactive (solid mode)${C_OFF}"
+    fi
+
+    # 5. GNOME Session
+    local session="${XDG_SESSION_TYPE:-unknown}"
+    local shell_ver=""
+    if command -v gnome-shell >/dev/null 2>&1; then
+        shell_ver="$(gnome-shell --version 2>/dev/null | awk '{print $3}')"
+    fi
+
+    # Print dashboard card
+    printf '\n%s╭────────────────────────────────────────────────╮%s\n' "$C_BLU" "$C_OFF"
+    printf '%s│%s   %s✨ Aura Glass Desktop Status%s                  %s│%s\n' "$C_BLU" "$C_OFF" "$C_BLD" "$C_OFF" "$C_BLU" "$C_OFF"
+    printf '%s├────────────────────────────────────────────────┤%s\n' "$C_BLU" "$C_OFF"
+    printf '%s│%s  Version:      %-35s%s│%s\n' "$C_BLU" "$C_OFF" "$ver" "$C_BLU" "$C_OFF"
+    printf '%s│%s  Desktop:      GNOME %-10s (%-18s) %s│%s\n' "$C_BLU" "$C_OFF" "${shell_ver:-?}" "${session}" "$C_BLU" "$C_OFF"
+    printf '%s│%s  Glass Mode:   %-44s%s│%s\n' "$C_BLU" "$C_OFF" "$mode_label" "$C_BLU" "$C_OFF"
+    printf '%s│%s  Shell Theme:  %-35s%s│%s\n' "$C_BLU" "$C_OFF" "$theme" "$C_BLU" "$C_OFF"
+    printf '%s│%s  Accent:       %-35s%s│%s\n' "$C_BLU" "$C_OFF" "$accent" "$C_BLU" "$C_OFF"
+    printf '%s│%s  Power Source: %-44s%s│%s\n' "$C_BLU" "$C_OFF" "$power_info" "$C_BLU" "$C_OFF"
+    printf '%s│%s  Auto-Eco:     %-44s%s│%s\n' "$C_BLU" "$C_OFF" "$auto_eco" "$C_BLU" "$C_OFF"
+    printf '%s│%s  Blur Shaders: %-44s%s│%s\n' "$C_BLU" "$C_OFF" "$blur_state" "$C_BLU" "$C_OFF"
+    printf '%s╰────────────────────────────────────────────────╯%s\n\n' "$C_BLU" "$C_OFF"
+}
+
+# Main dispatcher
+main() {
+    if [ $# -eq 0 ]; then
+        if [ -t 1 ]; then
+            cmd_status
+            exit 0
+        else
+            usage
+            exit 0
+        fi
+    fi
+
+    local cmd="$1"; shift
+
+    case "$cmd" in
+        status)
+            cmd_status "$@"
+            ;;
+        mode)
+            exec "$BIN_DIR/aura-glass-mode" "$@"
+            ;;
+        doctor)
+            exec "$BIN_DIR/aura-glass-doctor" "$@"
+            ;;
+        settings|gui)
+            exec "$BIN_DIR/aura-glass-settings" "$@"
+            ;;
+        backup)
+            exec "$BIN_DIR/aura-glass-backup" "$@"
+            ;;
+        apply)
+            exec "$BIN_DIR/aura-glass-apply" "$@"
+            ;;
+        gdm|sync-gdm)
+            if [ "${1:-}" = "sync" ]; then shift; fi
+            exec "$BIN_DIR/aura-glass-gdm-sync" "$@"
+            ;;
+        update|update-check)
+            exec "$BIN_DIR/aura-glass-update-check" "$@"
+            ;;
+        ext|extensions)
+            exec "$BIN_DIR/aura-glass-ext" "$@"
+            ;;
+        preview)
+            exec "$BIN_DIR/aura-glass-preview" "$@"
+            ;;
+        version|-v|--version)
+            cmd_version
+            ;;
+        help|-h|--help)
+            usage
+            ;;
+        *)
+            printf 'error: unknown command "%s"\n\n' "$cmd" >&2
+            usage >&2
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"

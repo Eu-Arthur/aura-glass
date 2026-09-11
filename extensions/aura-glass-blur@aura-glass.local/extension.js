@@ -32,11 +32,13 @@
 
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
+import GObject from 'gi://GObject';
 import Meta from 'gi://Meta';
 import Shell from 'gi://Shell';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
+import * as QuickSettings from 'resource:///org/gnome/shell/ui/quickSettings.js';
 import {WindowMenu} from 'resource:///org/gnome/shell/ui/windowMenu.js';
 import {Extension, gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
@@ -140,6 +142,32 @@ function isBlurrable(frameType) {
         frameType === Meta.FrameType.UTILITY;
 }
 
+const AuraGlassToggle = GObject.registerClass(
+class AuraGlassToggle extends QuickSettings.QuickToggle {
+    _init(extension) {
+        super._init({
+            title: _('Aura Glass'),
+            iconName: 'preferences-desktop-display-symbolic',
+            toggleMode: true,
+        });
+        this._extension = extension;
+        this.connect('clicked', () => this._extension._toggleGlassMode());
+    }
+});
+
+const AuraGlassIndicator = GObject.registerClass(
+class AuraGlassIndicator extends QuickSettings.SystemIndicator {
+    _init(extension) {
+        super._init();
+        this._toggle = new AuraGlassToggle(extension);
+        this.quickSettingsItems.push(this._toggle);
+    }
+
+    get toggle() {
+        return this._toggle;
+    }
+});
+
 export default class AuraGlassBlurExtension extends Extension {
     enable() {
         this._settings = this._openBmsApplicationsSettings();
@@ -183,6 +211,12 @@ export default class AuraGlassBlurExtension extends Extension {
         this._monitorsChangedId = Main.layoutManager.connect(
             'monitors-changed', () => this._schedulePanelBlurRebuild());
         this._schedulePanelBlurRebuild();
+
+        // Native Quick Settings toggle tile
+        this._initQuickSettings();
+
+        // Background wallpaper auto-sync for GDM
+        this._initGdmWallpaperWatcher();
     }
 
     disable() {
@@ -192,6 +226,8 @@ export default class AuraGlassBlurExtension extends Extension {
         }
         this._settings = null;
 
+        this._destroyQuickSettings();
+        this._destroyGdmWallpaperWatcher();
         this._destroyInhibitWatchers();
         this._destroyMinimizationWatcher();
         this._destroyIconSync();
@@ -946,5 +982,165 @@ export default class AuraGlassBlurExtension extends Extension {
                 pipeline.effect.set_enabled(!isMinimized);
             pipeline.effects?.forEach(effect => effect.set_enabled(!isMinimized));
         }
+    }
+
+    // ---- Quick Settings Toggle & Menu Tile ---------------------------------
+
+    _initQuickSettings() {
+        this._quickIndicator = null;
+        this._qsMenuStateId = 0;
+
+        try {
+            const quickSettings = Main.panel?.statusArea?.quickSettings;
+            if (!quickSettings)
+                return;
+
+            this._quickIndicator = new AuraGlassIndicator(this);
+            quickSettings.addExternalIndicator(this._quickIndicator);
+
+            if (quickSettings.menu) {
+                this._qsMenuStateId = quickSettings.menu.connect(
+                    'open-state-changed', (_m, open) => {
+                        if (open)
+                            this._syncQuickToggle();
+                    }
+                );
+            }
+            this._syncQuickToggle();
+        } catch (_) {
+            this._quickIndicator = null;
+        }
+    }
+
+    _destroyQuickSettings() {
+        if (this._qsMenuStateId && Main.panel?.statusArea?.quickSettings?.menu) {
+            Main.panel.statusArea.quickSettings.menu.disconnect(this._qsMenuStateId);
+            this._qsMenuStateId = 0;
+        }
+        if (this._quickIndicator) {
+            try { this._quickIndicator.destroy(); } catch (_) {}
+            this._quickIndicator = null;
+        }
+    }
+
+    _toggleGlassMode() {
+        try {
+            const proc = Gio.Subprocess.new(
+                ['aura-glass-mode', 'toggle', '--notify'],
+                Gio.SubprocessFlags.NONE
+            );
+            proc.wait_async(null, () => this._syncQuickToggle());
+        } catch (_) {
+            const confDir = GLib.build_filenamev([GLib.get_user_config_dir(), 'aura-glass']);
+            const stylingOff = GLib.build_filenamev([confDir, 'styling-off']);
+            const appSettings = this._openBmsSettings(BMS_SCHEMA_ID);
+            if (GLib.file_test(stylingOff, GLib.FileTest.EXISTS)) {
+                try { GLib.unlink(stylingOff); } catch (_) {}
+                if (appSettings)
+                    appSettings.set_boolean('blur', true);
+            } else {
+                GLib.file_set_contents(stylingOff, '1\n');
+                if (appSettings)
+                    appSettings.set_boolean('blur', false);
+            }
+            this._syncQuickToggle();
+        }
+    }
+
+    _syncQuickToggle() {
+        if (!this._quickIndicator || !this._quickIndicator.toggle)
+            return;
+
+        const confDir = GLib.build_filenamev([GLib.get_user_config_dir(), 'aura-glass']);
+        const stylingOff = GLib.build_filenamev([confDir, 'styling-off']);
+        const modeFile = GLib.build_filenamev([confDir, 'glass-mode']);
+
+        let mode = 'frosted';
+        if (GLib.file_test(stylingOff, GLib.FileTest.EXISTS)) {
+            mode = 'solid';
+        } else if (GLib.file_test(modeFile, GLib.FileTest.EXISTS)) {
+            try {
+                const [ok, bytes] = GLib.file_get_contents(modeFile);
+                if (ok) {
+                    const m = new TextDecoder().decode(bytes).trim();
+                    if (m === 'frosted' || m === 'transparent' || m === 'solid')
+                        mode = m;
+                }
+            } catch (_) {}
+        }
+
+        const toggle = this._quickIndicator.toggle;
+        if (mode === 'solid') {
+            toggle.checked = false;
+            toggle.subtitle = _('Solid');
+        } else if (mode === 'transparent') {
+            toggle.checked = true;
+            toggle.subtitle = _('Transparent');
+        } else {
+            toggle.checked = true;
+            toggle.subtitle = _('Frosted');
+        }
+    }
+
+    // ---- Automatic GDM Lockscreen Wallpaper Sync ---------------------------
+
+    _initGdmWallpaperWatcher() {
+        this._bgSettings = null;
+        this._bgChangedId = 0;
+        this._bgDarkChangedId = 0;
+        this._gdmSyncTimer = 0;
+
+        const hasGdm = GLib.find_program_in_path('gdm') ||
+                       GLib.find_program_in_path('gdm3') ||
+                       GLib.file_test('/usr/sbin/gdm3', GLib.FileTest.EXISTS);
+        if (!hasGdm)
+            return;
+
+        try {
+            this._bgSettings = new Gio.Settings({
+                schema_id: 'org.gnome.desktop.background',
+            });
+            this._bgChangedId = this._bgSettings.connect('changed::picture-uri', () => {
+                this._scheduleGdmSync();
+            });
+            this._bgDarkChangedId = this._bgSettings.connect('changed::picture-uri-dark', () => {
+                this._scheduleGdmSync();
+            });
+        } catch (_) {
+            this._bgSettings = null;
+        }
+    }
+
+    _scheduleGdmSync() {
+        if (this._gdmSyncTimer)
+            GLib.source_remove(this._gdmSyncTimer);
+
+        this._gdmSyncTimer = GLib.timeout_add_seconds(
+            GLib.PRIORITY_DEFAULT, 4, () => {
+                this._gdmSyncTimer = 0;
+                try {
+                    Gio.Subprocess.new(
+                        ['aura-glass-gdm-sync'],
+                        Gio.SubprocessFlags.NONE
+                    );
+                } catch (_) {}
+                return GLib.SOURCE_REMOVE;
+            });
+    }
+
+    _destroyGdmWallpaperWatcher() {
+        if (this._gdmSyncTimer) {
+            GLib.source_remove(this._gdmSyncTimer);
+            this._gdmSyncTimer = 0;
+        }
+        if (this._bgChangedId && this._bgSettings) {
+            this._bgSettings.disconnect(this._bgChangedId);
+            this._bgChangedId = 0;
+        }
+        if (this._bgDarkChangedId && this._bgSettings) {
+            this._bgSettings.disconnect(this._bgDarkChangedId);
+            this._bgDarkChangedId = 0;
+        }
+        this._bgSettings = null;
     }
 }

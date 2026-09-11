@@ -166,6 +166,39 @@ _aura_glass_mode() {
     COMPREPLY=( $(compgen -W "$subcmds" -- "$cur") )
 }
 
+_aura_glass_main() {
+    local cur prev subcmds
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    subcmds="status mode doctor settings backup apply gdm update ext preview version help"
+
+    if [ "$COMP_CWORD" -eq 1 ]; then
+        COMPREPLY=( $(compgen -W "$subcmds -h --help -v --version" -- "$cur") )
+        return 0
+    fi
+
+    local cmd="${COMP_WORDS[1]}"
+    case "$cmd" in
+        mode)
+            _aura_glass_mode
+            ;;
+        doctor)
+            _aura_glass_doctor
+            ;;
+        backup)
+            _aura_glass_backup
+            ;;
+        ext)
+            _aura_glass_ext
+            ;;
+        gdm)
+            COMPREPLY=( $(compgen -W "sync" -- "$cur") )
+            ;;
+    esac
+}
+
 complete -F _aura_glass_install install.sh ./install.sh aura-glass-apply ./bin/aura-glass-apply bin/aura-glass-apply
 complete -F _aura_glass_uninstall uninstall.sh ./uninstall.sh
 complete -F _aura_glass_update_check aura-glass-update-check ./bin/aura-glass-update-check bin/aura-glass-update-check
@@ -173,4 +206,5 @@ complete -F _aura_glass_ext aura-glass-ext ./bin/aura-glass-ext bin/aura-glass-e
 complete -F _aura_glass_doctor aura-glass-doctor ./bin/aura-glass-doctor bin/aura-glass-doctor
 complete -F _aura_glass_backup aura-glass-backup ./bin/aura-glass-backup bin/aura-glass-backup
 complete -F _aura_glass_mode aura-glass-mode ./bin/aura-glass-mode bin/aura-glass-mode
+complete -F _aura_glass_main aura-glass ./bin/aura-glass bin/aura-glass
 
