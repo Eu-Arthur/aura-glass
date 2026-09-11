@@ -1,4 +1,4 @@
-#compdef install.sh uninstall.sh aura-glass-apply aura-glass-ext aura-glass-doctor aura-glass-update-check aura-glass-backup aura-glass-mode
+#compdef aura-glass install.sh uninstall.sh aura-glass-apply aura-glass-ext aura-glass-doctor aura-glass-update-check aura-glass-backup aura-glass-mode
 
 # Zsh completion for Aura Glass suite
 
@@ -169,8 +169,82 @@ _aura_glass_update_check() {
         '(-h --help)'{-h,--help}'[Show update check help]'
 }
 
+_aura_glass() {
+    local -a subcmds
+    subcmds=(
+        'status:Display interactive desktop and glass status summary'
+        'mode:Manage glass mode (frosted, transparent, solid, eco, auto)'
+        'accent:Query, set, or auto-sync accent color from wallpaper'
+        'shortcut:Configure GNOME keyboard shortcuts'
+        'doctor:Run full system health checks and diagnostics'
+        'settings:Launch the Libadwaita settings application'
+        'backup:Create, restore, export, or import configuration backups'
+        'apply:Re-splice CSS stylesheets and refresh active theme'
+        'gdm:Sync desktop wallpaper and primary monitor to GDM'
+        'update:Check for newer aura-glass release'
+        'ext:Inspect and manage companion GNOME Shell extensions'
+        'version:Print version information'
+        'help:Show usage help'
+    )
+
+    if (( CURRENT == 2 )); then
+        _describe -t commands 'aura-glass command' subcmds
+        _arguments -s \
+            '(-h --help)'{-h,--help}'[Show usage help]' \
+            '(-v --version)'{-v,--version}'[Print version information]'
+        return
+    fi
+
+    local subcmd="${words[2]}"
+    curcontext="${curcontext%:*:*}:aura-glass-$subcmd:"
+
+    case "$subcmd" in
+        mode)
+            _arguments -s \
+                '1:mode action:(get set toggle eco auto frosted transparent solid)' \
+                '--notify[Send desktop notification on change]' \
+                '(-h --help)'{-h,--help}'[Show mode help]'
+            ;;
+        accent)
+            _arguments -s \
+                '1:accent action:(get auto set list blue teal green yellow orange red pink purple slate)' \
+                '--json[Output JSON format]' \
+                '(-h --help)'{-h,--help}'[Show accent help]'
+            ;;
+        shortcut|shortcuts)
+            _arguments -s \
+                '1:shortcut action:(status enable disable install remove)' \
+                '(-h --help)'{-h,--help}'[Show shortcut help]'
+            ;;
+        doctor)
+            _arguments -s \
+                '--json[Output results as structured JSON]' \
+                '(-q --quiet)'{-q,--quiet}'[Suppress output, exit code only]' \
+                '(-h --help)'{-h,--help}'[Show doctor help]'
+            ;;
+        backup)
+            _aura_glass_backup
+            ;;
+        ext)
+            _aura_glass_ext
+            ;;
+        apply)
+            _aura_glass_install
+            ;;
+        gdm)
+            _arguments -s '1:gdm action:(sync)' '(-h --help)'{-h,--help}'[Show GDM help]'
+            ;;
+        *)
+            _arguments -s '(-h --help)'{-h,--help}'[Show usage help]'
+            ;;
+    esac
+}
+
 # Dispatch based on invoked command name
 case "${words[1]:t}" in
+    aura-glass)
+        _aura_glass
+        ;;
     install.sh|aura-glass-apply)
         _aura_glass_install
         ;;

@@ -1,7 +1,7 @@
 # Fish completion for Aura Glass suite
 
 # Shared options for installer and apply tool
-for cmd in aura-glass install.sh aura-glass-apply
+for cmd in install.sh aura-glass-apply
     complete -c $cmd -f
     complete -c $cmd -l full -d "Install full suite with all extensions and extras"
     complete -c $cmd -l extras -d "Install extra extensions"
@@ -36,6 +36,18 @@ for cmd in aura-glass install.sh aura-glass-apply
     complete -c $cmd -l doctor -d "Run diagnostic checks"
     complete -c $cmd -s h -l help -d "Show usage help"
 end
+
+# Main unified CLI
+complete -c aura-glass -f
+complete -c aura-glass -n "__fish_use_subcommand" -a "status mode accent shortcut doctor settings backup apply gdm update ext preview version help"
+complete -c aura-glass -s h -l help -d "Show usage help"
+complete -c aura-glass -s v -l version -d "Print version"
+complete -c aura-glass -n "__fish_seen_subcommand_from mode" -a "get set toggle eco auto frosted transparent solid"
+complete -c aura-glass -n "__fish_seen_subcommand_from accent" -a "get auto set list blue teal green yellow orange red pink purple slate"
+complete -c aura-glass -n "__fish_seen_subcommand_from shortcut" -a "status enable disable"
+complete -c aura-glass -n "__fish_seen_subcommand_from gdm" -a "sync"
+complete -c aura-glass -n "__fish_seen_subcommand_from ext" -a "list install remove enable disable recommended full"
+complete -c aura-glass -n "__fish_seen_subcommand_from backup" -a "create export import restore list verify"
 
 # Uninstall tool
 complete -c uninstall.sh -f

@@ -43,6 +43,8 @@ ${C_BLD}USAGE:${C_OFF}
 ${C_BLD}COMMANDS:${C_OFF}
     ${C_CYA}status${C_OFF}                Display interactive desktop and glass status summary
     ${C_CYA}mode${C_OFF} [get|set|toggle]   Manage glass mode (frosted, transparent, solid, eco, auto)
+    ${C_CYA}accent${C_OFF} [auto|set|get]   Manage or auto-sync accent color with wallpaper
+    ${C_CYA}shortcut${C_OFF} [enable|status] Configure GNOME keyboard shortcuts (<Super><Alt>G / A)
     ${C_CYA}doctor${C_OFF}                Run full system health checks and diagnostics
     ${C_CYA}settings${C_OFF}              Launch the Libadwaita settings application
     ${C_CYA}backup${C_OFF} [create|restore] Create, restore, export, or import configuration backups
@@ -56,7 +58,8 @@ ${C_BLD}COMMANDS:${C_OFF}
 ${C_BLD}EXAMPLES:${C_OFF}
     aura-glass status
     aura-glass mode toggle
-    aura-glass mode frosted
+    aura-glass accent auto
+    aura-glass shortcut enable
     aura-glass doctor --json
     aura-glass backup create
 EOF
@@ -158,6 +161,190 @@ cmd_status() {
     printf '%s╰────────────────────────────────────────────────╯%s\n\n' "$C_BLU" "$C_OFF"
 }
 
+cmd_accent() {
+    local action="${1:-get}"
+    case "$action" in
+        auto)
+            shift || true
+            local tool="$REPO_ROOT/tools/wallpaper-accent.py"
+            if [ -x "$tool" ]; then
+                python3 "$tool" --apply "$@"
+            else
+                printf 'error: wallpaper-accent.py extractor not found\n' >&2
+                exit 1
+            fi
+            ;;
+        get|"")
+            local current="blue"
+            if command -v gsettings >/dev/null 2>&1; then
+                current="$(gsettings get org.gnome.desktop.interface accent-color 2>/dev/null || echo "'blue'")"
+                current="${current//\'/}"
+            elif [ -r "$CONF_DIR/accent" ]; then
+                current="$(head -n 1 "$CONF_DIR/accent" 2>/dev/null || echo "blue")"
+            fi
+            printf '%s\n' "$current"
+            ;;
+        set)
+            shift || true
+            local target="${1:-}"
+            if [ -z "$target" ]; then
+                printf 'error: missing accent name (blue, teal, green, yellow, orange, red, pink, purple, slate)\n' >&2
+                exit 1
+            fi
+            case "$target" in
+                blue|teal|green|yellow|orange|red|pink|purple|slate)
+                    if command -v gsettings >/dev/null 2>&1; then
+                        gsettings set org.gnome.desktop.interface accent-color "$target"
+                    fi
+                    mkdir -p "$CONF_DIR"
+                    printf '%s\n' "$target" > "$CONF_DIR/accent"
+                    rm -f "$CONF_DIR/accent-from-wallpaper" 2>/dev/null || true
+                    if [ -x "$BIN_DIR/aura-glass-apply" ]; then
+                        "$BIN_DIR/aura-glass-apply"
+                    fi
+                    printf '✓ Accent set to %s\n' "$target"
+                    ;;
+                *)
+                    printf 'error: invalid accent "%s". Valid: blue, teal, green, yellow, orange, red, pink, purple, slate\n' "$target" >&2
+                    exit 1
+                    ;;
+            esac
+            ;;
+        blue|teal|green|yellow|orange|red|pink|purple|slate)
+            cmd_accent set "$action"
+            ;;
+        list)
+            cat <<'EOF'
+Available GNOME accent colors:
+  • blue     (#3584e4) - Default GNOME blue
+  • teal     (#2190a4) - Sea green / cyan
+  • green    (#3a944a) - Forest green
+  • yellow   (#c88800) - Warm amber
+  • orange   (#ed5b00) - Deep orange
+  • red      (#e62d42) - Crimson red
+  • pink     (#d56199) - Vibrant pink
+  • purple   (#9141ac) - Royal purple
+  • slate    (#6f8396) - Neutral slate gray
+EOF
+            ;;
+        -h|--help|help)
+            cat <<'EOF'
+USAGE:
+    aura-glass accent [get]
+    aura-glass accent auto [--json]
+    aura-glass accent set <color>
+    aura-glass accent list
+EOF
+            ;;
+        *)
+            printf 'error: unknown accent action "%s". Use: get, auto, set <color>, list\n' "$action" >&2
+            exit 1
+            ;;
+    esac
+}
+
+cmd_shortcut() {
+    local action="${1:-status}"
+    local path_toggle="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/aura-glass-toggle/"
+    local path_settings="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/aura-glass-settings/"
+    local schema="org.gnome.settings-daemon.plugins.media-keys.custom-keybinding"
+
+    if ! command -v gsettings >/dev/null 2>&1; then
+        printf 'error: gsettings is required to manage shortcuts\n' >&2
+        exit 1
+    fi
+
+    case "$action" in
+        status)
+            local current_list
+            current_list="$(gsettings get org.gnome.settings-daemon.plugins.media-keys custom-keybindings 2>/dev/null || echo "@as []")"
+            printf 'Aura Glass Keyboard Shortcuts:\n'
+            if [[ "$current_list" =~ "$path_toggle" ]]; then
+                local b_toggle
+                b_toggle="$(gsettings get "$schema:$path_toggle" binding 2>/dev/null || echo "''")"
+                printf '  ✓ Toggle Glass Mode: %s  (aura-glass mode toggle)\n' "${b_toggle//\'/}"
+            else
+                printf '  ○ Toggle Glass Mode: not installed (recommended: <Super><Alt>g)\n'
+            fi
+
+            if [[ "$current_list" =~ "$path_settings" ]]; then
+                local b_set
+                b_set="$(gsettings get "$schema:$path_settings" binding 2>/dev/null || echo "''")"
+                printf '  ✓ Open Settings:     %s  (aura-glass settings)\n' "${b_set//\'/}"
+            else
+                printf '  ○ Open Settings:     not installed (recommended: <Super><Alt>a)\n'
+            fi
+            printf '\nTo install shortcuts: aura-glass shortcut enable\n'
+            ;;
+        enable|install)
+            # 1. Configure toggle shortcut
+            gsettings set "$schema:$path_toggle" name "Aura Glass - Toggle Glass Mode"
+            gsettings set "$schema:$path_toggle" command "aura-glass mode toggle"
+            gsettings set "$schema:$path_toggle" binding "<Super><Alt>g"
+
+            # 2. Configure settings shortcut
+            gsettings set "$schema:$path_settings" name "Aura Glass - Settings"
+            gsettings set "$schema:$path_settings" command "aura-glass settings"
+            gsettings set "$schema:$path_settings" binding "<Super><Alt>a"
+
+            # 3. Add to custom-keybindings list if not present
+            local current_list
+            current_list="$(gsettings get org.gnome.settings-daemon.plugins.media-keys custom-keybindings 2>/dev/null || echo "[]")"
+            local new_list="$current_list"
+            if [[ ! "$new_list" =~ "$path_toggle" ]]; then
+                if [ "$new_list" = "@as []" ] || [ "$new_list" = "[]" ] || [ "$new_list" = "@as[]" ]; then
+                    new_list="['$path_toggle']"
+                else
+                    new_list="${new_list%]}, '$path_toggle']"
+                fi
+            fi
+            if [[ ! "$new_list" =~ "$path_settings" ]]; then
+                if [ "$new_list" = "@as []" ] || [ "$new_list" = "[]" ] || [ "$new_list" = "@as[]" ]; then
+                    new_list="['$path_settings']"
+                else
+                    new_list="${new_list%]}, '$path_settings']"
+                fi
+            fi
+            gsettings set org.gnome.settings-daemon.plugins.media-keys custom-keybindings "$new_list"
+            printf '✓ Registered keyboard shortcuts in GNOME:\n'
+            printf '  • <Super><Alt>G -> Toggle Glass Mode (frosted <-> solid)\n'
+            printf '  • <Super><Alt>A -> Open Aura Glass Settings\n'
+            ;;
+        disable|remove)
+            local current_list
+            current_list="$(gsettings get org.gnome.settings-daemon.plugins.media-keys custom-keybindings 2>/dev/null || echo "[]")"
+            local cleaned_list
+            cleaned_list="$(python3 -c "
+import ast
+raw = '''$current_list'''
+if raw.startswith('@as '): raw = raw[4:]
+try:
+    arr = ast.literal_eval(raw)
+except Exception:
+    arr = []
+arr = [p for p in arr if 'aura-glass' not in p]
+print(repr(arr))
+" 2>/dev/null || echo "[]")"
+            gsettings set org.gnome.settings-daemon.plugins.media-keys custom-keybindings "$cleaned_list"
+            gsettings reset-recursively "$schema:$path_toggle" 2>/dev/null || true
+            gsettings reset-recursively "$schema:$path_settings" 2>/dev/null || true
+            printf '✓ Unregistered Aura Glass keyboard shortcuts\n'
+            ;;
+        -h|--help|help)
+            cat <<'EOF'
+USAGE:
+    aura-glass shortcut status
+    aura-glass shortcut enable
+    aura-glass shortcut disable
+EOF
+            ;;
+        *)
+            printf 'error: unknown shortcut action "%s". Use: status, enable, disable\n' "$action" >&2
+            exit 1
+            ;;
+    esac
+}
+
 # Main dispatcher
 main() {
     if [ $# -eq 0 ]; then
@@ -178,6 +365,12 @@ main() {
             ;;
         mode)
             exec "$BIN_DIR/aura-glass-mode" "$@"
+            ;;
+        accent)
+            cmd_accent "$@"
+            ;;
+        shortcut|shortcuts)
+            cmd_shortcut "$@"
             ;;
         doctor)
             exec "$BIN_DIR/aura-glass-doctor" "$@"

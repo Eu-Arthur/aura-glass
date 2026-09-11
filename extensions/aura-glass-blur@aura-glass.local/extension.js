@@ -1023,13 +1023,24 @@ export default class AuraGlassBlurExtension extends Extension {
         }
     }
 
+    _showOsd(iconName, label) {
+        try {
+            const icon = Gio.ThemedIcon.new_with_default_fallbacks(iconName);
+            if (Main.osdWindowManager?.showAll) {
+                Main.osdWindowManager.showAll(icon, label, null, 1.0);
+            } else if (Main.osdWindowManager?.show) {
+                Main.osdWindowManager.show(-1, icon, label, null, 1.0);
+            }
+        } catch (_) {}
+    }
+
     _toggleGlassMode() {
         try {
             const proc = Gio.Subprocess.new(
                 ['aura-glass-mode', 'toggle', '--notify'],
                 Gio.SubprocessFlags.NONE
             );
-            proc.wait_async(null, () => this._syncQuickToggle());
+            proc.wait_async(null, () => this._syncQuickToggle(true));
         } catch (_) {
             const confDir = GLib.build_filenamev([GLib.get_user_config_dir(), 'aura-glass']);
             const stylingOff = GLib.build_filenamev([confDir, 'styling-off']);
@@ -1043,11 +1054,11 @@ export default class AuraGlassBlurExtension extends Extension {
                 if (appSettings)
                     appSettings.set_boolean('blur', false);
             }
-            this._syncQuickToggle();
+            this._syncQuickToggle(true);
         }
     }
 
-    _syncQuickToggle() {
+    _syncQuickToggle(showOsd = false) {
         if (!this._quickIndicator || !this._quickIndicator.toggle)
             return;
 
@@ -1079,6 +1090,15 @@ export default class AuraGlassBlurExtension extends Extension {
         } else {
             toggle.checked = true;
             toggle.subtitle = _('Frosted');
+        }
+
+        if (showOsd) {
+            let iconName = 'weather-fog-symbolic';
+            if (mode === 'solid')
+                iconName = 'display-brightness-symbolic';
+            else if (mode === 'transparent')
+                iconName = 'preferences-desktop-display-symbolic';
+            this._showOsd(iconName, `Aura Glass: ${toggle.subtitle}`);
         }
     }
 

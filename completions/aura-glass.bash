@@ -172,7 +172,7 @@ _aura_glass_main() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    subcmds="status mode doctor settings backup apply gdm update ext preview version help"
+    subcmds="status mode accent shortcut doctor settings backup apply gdm update ext preview version help"
 
     if [ "$COMP_CWORD" -eq 1 ]; then
         COMPREPLY=( $(compgen -W "$subcmds -h --help -v --version" -- "$cur") )
@@ -183,6 +183,18 @@ _aura_glass_main() {
     case "$cmd" in
         mode)
             _aura_glass_mode
+            ;;
+        accent)
+            if [ "$COMP_CWORD" -eq 2 ]; then
+                COMPREPLY=( $(compgen -W "auto get set list blue teal green yellow orange red pink purple slate -h --help" -- "$cur") )
+            elif [ "$COMP_CWORD" -eq 3 ] && [ "$prev" = "set" ]; then
+                COMPREPLY=( $(compgen -W "blue teal green yellow orange red pink purple slate" -- "$cur") )
+            fi
+            ;;
+        shortcut|shortcuts)
+            if [ "$COMP_CWORD" -eq 2 ]; then
+                COMPREPLY=( $(compgen -W "status enable disable -h --help" -- "$cur") )
+            fi
             ;;
         doctor)
             _aura_glass_doctor

@@ -103,6 +103,25 @@ if [ "$gpu_found" = 0 ]; then
     fi
 fi
 
+gpu_desc=""
+gpu_drv=""
+if have lspci; then
+    gpu_desc="$(lspci -nnk -d ::0300 2>/dev/null | grep -E "(VGA|3D|Display)" | head -n 1 | sed -E 's/.*: //; s/ \[.*//' || true)"
+    gpu_drv="$(lspci -nnk -d ::0300 2>/dev/null | grep -E "Kernel driver in use:" | head -n 1 | awk '{print $NF}' || true)"
+fi
+if [ -z "$gpu_desc" ]; then
+    for _card in /sys/class/drm/card[0-9]; do
+        if [ -d "$_card/device/driver" ]; then
+            gpu_drv="$(basename "$(readlink -f "$_card/device/driver")")"
+            gpu_desc="DRM GPU device (${_card##*/})"
+            break
+        fi
+    done
+fi
+if [ -n "$gpu_desc" ]; then
+    record "Hardware" "GPU Device & Driver" "OK" "$gpu_desc (driver: ${gpu_drv:-unknown})"
+fi
+
 if [ "$session" = "wayland" ] && have gsettings; then
     mutter_exp="$(gsettings get org.gnome.mutter experimental-features 2>/dev/null || echo "@as []")"
     if [[ "$mutter_exp" =~ "variable-refresh-rate" ]]; then
@@ -319,6 +338,20 @@ if have fish; then
     else
         record "Integration" "Fish Completion" "INFO" "not installed" "Run ./install.sh to deploy shell completions."
     fi
+fi
+
+# 9. Shortcuts & Quick Settings
+if have gsettings; then
+    _kb_list="$(gsettings get org.gnome.settings-daemon.plugins.media-keys custom-keybindings 2>/dev/null || echo "")"
+    if [[ "$_kb_list" =~ "aura-glass-toggle" ]]; then
+        record "Integration" "Keyboard Shortcuts" "OK" "Active (<Super><Alt>G to toggle glass, <Super><Alt>A for settings)"
+    else
+        record "Integration" "Keyboard Shortcuts" "INFO" "not enabled" "Run 'aura-glass shortcut enable' to install shortcuts."
+    fi
+fi
+
+if [ -d "$EXT_DIR/aura-glass-blur@aura-glass.local" ] || [ -d "/usr/share/gnome-shell/extensions/aura-glass-blur@aura-glass.local" ]; then
+    record "Integration" "Quick Settings Toggle" "OK" "Native Aura Glass toggle tile in GNOME Shell"
 fi
 
 
