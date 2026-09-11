@@ -233,6 +233,10 @@ export default class AuraGlassBlurExtension extends Extension {
             GLib.source_remove(this._panelBlurTimer);
             this._panelBlurTimer = 0;
         }
+        if (this._panelBlurRestoreTimer) {
+            GLib.source_remove(this._panelBlurRestoreTimer);
+            this._panelBlurRestoreTimer = 0;
+        }
 
         this._panelBlurTimer = GLib.timeout_add_seconds(
             GLib.PRIORITY_DEFAULT, 3, () => {

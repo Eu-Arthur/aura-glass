@@ -38,6 +38,19 @@ STATE="$CONF_DIR/update-available"
 NOTIFY=0
 [ "${1:-}" = "--notify" ] && NOTIFY=1
 
+# If running as automated daemon/timer (--notify) on battery, defer until AC connected
+if [ "$NOTIFY" = 1 ]; then
+    if [ -d /sys/class/power_supply ]; then
+        for ps in /sys/class/power_supply/*; do
+            if [ -f "$ps/type" ] && [ "$(cat "$ps/type" 2>/dev/null)" = "Battery" ]; then
+                if [ -f "$ps/status" ] && [ "$(cat "$ps/status" 2>/dev/null)" = "Discharging" ]; then
+                    exit 0
+                fi
+            fi
+        done
+    fi
+fi
+
 REPO=""
 if [ -r "$CONF_DIR/repo-path" ]; then
     IFS= read -r REPO < "$CONF_DIR/repo-path" 2>/dev/null || REPO=""

@@ -9,6 +9,7 @@ Documentation=https://github.com/DevWebeloper/aura-glass
 # before its wifi did is noise rather than information.
 After=network-online.target
 Wants=network-online.target
+ConditionACPower=true
 
 [Service]
 Type=oneshot

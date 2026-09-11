@@ -112,6 +112,50 @@ if [ "$session" = "wayland" ] && have gsettings; then
     fi
 fi
 
+# Power & Battery Management
+has_battery=0
+on_battery=0
+if [ -d /sys/class/power_supply ]; then
+    for ps in /sys/class/power_supply/*; do
+        if [ -f "$ps/type" ] && [ "$(cat "$ps/type" 2>/dev/null)" = "Battery" ]; then
+            has_battery=1
+            if [ -f "$ps/status" ] && [ "$(cat "$ps/status" 2>/dev/null)" = "Discharging" ]; then
+                on_battery=1
+            fi
+            break
+        fi
+    done
+fi
+
+if [ "$has_battery" = 1 ]; then
+    if [ "$on_battery" = 1 ]; then
+        record "Power & Battery" "Power Source" "OK" "Running on battery"
+    else
+        record "Power & Battery" "Power Source" "OK" "AC connected / charging"
+    fi
+
+    if [ -f "$CONF_DIR/no-auto-eco" ]; then
+        record "Power & Battery" "Auto-Eco Power Saving" "INFO" "Disabled ($CONF_DIR/no-auto-eco present)" "Remove $CONF_DIR/no-auto-eco to enable automatic battery saving."
+    else
+        record "Power & Battery" "Auto-Eco Power Saving" "OK" "Enabled (pauses blur on battery)"
+    fi
+else
+    record "Power & Battery" "Power Source" "OK" "AC / Desktop system (no battery detected)"
+fi
+
+if [ -f "$CONF_DIR/perf-inhibited" ]; then
+    record "Power & Battery" "Blur Shaders State" "INFO" "Currently paused (inhibit active: battery/fullscreen/lock/lid)"
+else
+    record "Power & Battery" "Blur Shaders State" "OK" "Active (full frosted glass shaders enabled)"
+fi
+
+if have powerprofilesctl; then
+    prof="$(powerprofilesctl get 2>/dev/null || echo "")"
+    if [ -n "$prof" ]; then
+        record "Power & Battery" "GNOME Power Profile" "OK" "Profile: $prof"
+    fi
+fi
+
 # 2. Required Commands
 for cmd in "${REQUIRED_CMDS[@]}"; do
     if [ "$cmd" = "sassc" ]; then
