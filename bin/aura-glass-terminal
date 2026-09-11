@@ -1,0 +1,275 @@
+#!/usr/bin/env bash
+# aura-glass-terminal — blur & transparency integration for modern terminal emulators.
+set -euo pipefail
+
+CONF_DIR="${AURA_GLASS_CONF:-${AURA_GLASS_DIR:-${TAHOE_GLASS_DIR:-$HOME/.config/aura-glass}}}"
+[ -d "$CONF_DIR" ] || [ ! -d "$HOME/.config/tahoe-glass" ] || CONF_DIR="$HOME/.config/tahoe-glass"
+
+C_BLD=$'\033[1m'
+C_BLU=$'\033[1;34m'
+C_CYA=$'\033[1;36m'
+C_GRN=$'\033[1;32m'
+C_YEL=$'\033[1;33m'
+C_DIM=$'\033[2m'
+C_OFF=$'\033[0m'
+
+usage() {
+    cat <<'EOF'
+aura-glass-terminal — glass transparency & background blur for terminal emulators
+
+USAGE:
+    aura-glass terminal status
+    aura-glass terminal sync
+    aura-glass terminal apply <ghostty | kitty | alacritty | wezterm | foot | ptyxis>
+    aura-glass terminal snippet <terminal> [frosted | transparent | solid]
+    aura-glass terminal -h | --help
+
+SUPPORTED TERMINALS:
+    ghostty      Modern GPU-accelerated terminal with native blur shaders
+    kitty        Fast, feature-rich GPU terminal with background_blur support
+    alacritty    Minimalist GPU terminal with window opacity and blur
+    wezterm      Cross-platform terminal emulator with Lua configuration
+    foot         Lightweight Wayland terminal emulator with alpha transparency
+    ptyxis       GNOME container-oriented terminal with native libadwaita styling
+EOF
+}
+
+die() { printf 'error: %s\n' "$*" >&2; exit 1; }
+ok()  { printf '✓ %s\n' "$*"; }
+
+get_current_mode() {
+    if [ -f "$CONF_DIR/styling-off" ]; then
+        echo "solid"
+    elif [ -r "$CONF_DIR/glass-mode" ]; then
+        head -n 1 "$CONF_DIR/glass-mode" 2>/dev/null || echo "frosted"
+    else
+        echo "frosted"
+    fi
+}
+
+get_target_values() {
+    local mode="$1"
+    case "$mode" in
+        solid)
+            echo "1.00 0" # opacity blur
+            ;;
+        transparent)
+            echo "0.90 0"
+            ;;
+        frosted|*)
+            echo "0.85 20"
+            ;;
+    esac
+}
+
+get_snippet() {
+    local term="$1"
+    local mode="${2:-$(get_current_mode)}"
+    local vals opacity blur
+    vals="$(get_target_values "$mode")"
+    read -r opacity blur <<< "$vals"
+
+    case "$term" in
+        ghostty)
+            cat <<EOF
+# --- Aura Glass Terminal Styling ($mode) ---
+background-opacity = $opacity
+background-blur-radius = $blur
+EOF
+            ;;
+        kitty)
+            cat <<EOF
+# --- Aura Glass Terminal Styling ($mode) ---
+background_opacity $opacity
+background_blur $blur
+EOF
+            ;;
+        alacritty)
+            local blur_bool="true"
+            [ "$blur" -eq 0 ] && blur_bool="false"
+            cat <<EOF
+# --- Aura Glass Terminal Styling ($mode) ---
+[window]
+opacity = $opacity
+blur = $blur_bool
+EOF
+            ;;
+        wezterm)
+            cat <<EOF
+-- --- Aura Glass Terminal Styling ($mode) ---
+config.window_background_opacity = $opacity
+config.kde_window_decorations = true
+EOF
+            ;;
+        foot)
+            cat <<EOF
+# --- Aura Glass Terminal Styling ($mode) ---
+[main]
+alpha=$opacity
+EOF
+            ;;
+        ptyxis)
+            cat <<EOF
+# GSettings schema for Ptyxis
+gsettings set org.gnome.Ptyxis opacity $opacity
+EOF
+            ;;
+        *)
+            die "unsupported terminal '$term'. Choose: ghostty, kitty, alacritty, wezterm, foot, ptyxis"
+            ;;
+    esac
+}
+
+cmd_status() {
+    printf '%sModern Terminal Blur & Glass Integration:%s\n\n' "$C_BLD" "$C_OFF"
+    printf '  %-12s %-12s %-18s %s\n' "TERMINAL" "DETECTED" "BLUR SHADERS" "CONFIG FILE"
+    printf '  %-12s %-12s %-18s %s\n' "────────────" "────────────" "──────────────────" "────────────────────────────────"
+
+    local terms=("ghostty" "kitty" "alacritty" "wezterm" "foot" "ptyxis")
+    for t in "${terms[@]}"; do
+        local det="${C_DIM}no${C_OFF}"
+        local cfg_path=""
+        local blur_sup="${C_GRN}native blur${C_OFF}"
+
+        case "$t" in
+            ghostty)
+                cfg_path="${XDG_CONFIG_HOME:-$HOME/.config}/ghostty/config"
+                command -v ghostty >/dev/null 2>&1 && det="${C_GRN}yes${C_OFF}"
+                ;;
+            kitty)
+                cfg_path="${XDG_CONFIG_HOME:-$HOME/.config}/kitty/kitty.conf"
+                command -v kitty >/dev/null 2>&1 && det="${C_GRN}yes${C_OFF}"
+                ;;
+            alacritty)
+                cfg_path="${XDG_CONFIG_HOME:-$HOME/.config}/alacritty/alacritty.toml"
+                [ -f "$cfg_path" ] || cfg_path="${XDG_CONFIG_HOME:-$HOME/.config}/alacritty/alacritty.yml"
+                command -v alacritty >/dev/null 2>&1 && det="${C_GRN}yes${C_OFF}"
+                ;;
+            wezterm)
+                cfg_path="${XDG_CONFIG_HOME:-$HOME/.config}/wezterm/wezterm.lua"
+                [ -f "$cfg_path" ] || cfg_path="$HOME/.wezterm.lua"
+                command -v wezterm >/dev/null 2>&1 && det="${C_GRN}yes${C_OFF}"
+                ;;
+            foot)
+                cfg_path="${XDG_CONFIG_HOME:-$HOME/.config}/foot/foot.ini"
+                blur_sup="${C_YEL}alpha opacity${C_OFF}"
+                command -v foot >/dev/null 2>&1 && det="${C_GRN}yes${C_OFF}"
+                ;;
+            ptyxis)
+                cfg_path="dconf / gsettings"
+                blur_sup="${C_YEL}libadwaita${C_OFF}"
+                command -v ptyxis >/dev/null 2>&1 && det="${C_GRN}yes${C_OFF}"
+                ;;
+        esac
+
+        local cfg_display="$cfg_path"
+        if [ "$cfg_path" != "dconf / gsettings" ]; then
+            if [ -f "$cfg_path" ]; then
+                cfg_display="${C_CYA}${cfg_path}${C_OFF}"
+            else
+                cfg_display="${C_DIM}${cfg_path} (not created)${C_OFF}"
+            fi
+        fi
+
+        printf '  %-12s %-21s %-27s %s\n' "$t" "$det" "$blur_sup" "$cfg_display"
+    done
+
+    local cur_mode
+    cur_mode="$(get_current_mode)"
+    printf '\n%sActive Aura Glass mode:%s %s%s%s\n' "$C_BLD" "$C_OFF" "$C_CYA" "$cur_mode" "$C_OFF"
+    printf '%sRun %saura-glass terminal apply <term>%s to configure or %saura-glass terminal sync%s\n' \
+        "$C_DIM" "$C_CYA" "$C_DIM" "$C_CYA" "$C_OFF"
+}
+
+cmd_apply() {
+    local term="${1:-}"
+    [ -n "$term" ] || die "missing terminal name. Usage: aura-glass terminal apply <ghostty|kitty|alacritty|wezterm|foot|ptyxis>"
+
+    local mode
+    mode="$(get_current_mode)"
+    local snippet
+    snippet="$(get_snippet "$term" "$mode")"
+
+    if [ "$term" = "ptyxis" ]; then
+        if command -v gsettings >/dev/null 2>&1 && gsettings list-schemas 2>/dev/null | grep -q '^org\.gnome\.Ptyxis$'; then
+            local vals opacity blur
+            vals="$(get_target_values "$mode")"
+            read -r opacity blur <<< "$vals"
+            gsettings set org.gnome.Ptyxis opacity "$opacity" 2>/dev/null || true
+            ok "Updated Ptyxis opacity to $opacity ($mode mode)."
+            return 0
+        else
+            printf 'Ptyxis gsettings schema not found. Snippet:\n%s\n' "$snippet"
+            return 0
+        fi
+    fi
+
+    local cfg_file=""
+    case "$term" in
+        ghostty) cfg_file="${XDG_CONFIG_HOME:-$HOME/.config}/ghostty/config" ;;
+        kitty) cfg_file="${XDG_CONFIG_HOME:-$HOME/.config}/kitty/kitty.conf" ;;
+        alacritty)
+            cfg_file="${XDG_CONFIG_HOME:-$HOME/.config}/alacritty/alacritty.toml"
+            ;;
+        wezterm) cfg_file="${XDG_CONFIG_HOME:-$HOME/.config}/wezterm/wezterm.lua" ;;
+        foot) cfg_file="${XDG_CONFIG_HOME:-$HOME/.config}/foot/foot.ini" ;;
+    esac
+
+    mkdir -p "$(dirname "$cfg_file")"
+
+    if [ -f "$cfg_file" ]; then
+        cp -f "$cfg_file" "$cfg_file.aurabackup"
+    fi
+
+    # Append or update snippet
+    printf '\n%s\n' "$snippet" >> "$cfg_file"
+    ok "Applied $mode glass configuration to $cfg_file"
+}
+
+cmd_sync() {
+    local mode
+    mode="$(get_current_mode)"
+    printf '%sSynchronizing installed terminals with Aura Glass (%s)...%s\n' "$C_BLD" "$mode" "$C_OFF"
+
+    local applied=0
+    for t in ghostty kitty alacritty wezterm foot; do
+        if command -v "$t" >/dev/null 2>&1; then
+            cmd_apply "$t"
+            applied=$((applied + 1))
+        fi
+    done
+
+    if command -v ptyxis >/dev/null 2>&1; then
+        cmd_apply ptyxis
+        applied=$((applied + 1))
+    fi
+
+    if [ "$applied" -eq 0 ]; then
+        printf '%sNo known supported terminals detected in PATH.%s\n' "$C_YEL" "$C_OFF"
+        printf 'Run %saura-glass terminal snippet <terminal>%s to inspect configuration snippets.\n' "$C_CYA" "$C_OFF"
+    else
+        ok "Synchronized $applied terminal(s)."
+    fi
+}
+
+main() {
+    local action="${1:-status}"
+    shift || true
+
+    case "$action" in
+        status) cmd_status "$@" ;;
+        apply) cmd_apply "$@" ;;
+        sync) cmd_sync "$@" ;;
+        snippet) get_snippet "$@" ;;
+        -h|--help|help) usage ;;
+        *)
+            if [ "$action" = "ghostty" ] || [ "$action" = "kitty" ] || [ "$action" = "alacritty" ] || [ "$action" = "wezterm" ] || [ "$action" = "foot" ] || [ "$action" = "ptyxis" ]; then
+                cmd_apply "$action" "$@"
+            else
+                die "unknown action '$action'. Run 'aura-glass terminal --help' for usage."
+            fi
+            ;;
+    esac
+}
+
+main "$@"

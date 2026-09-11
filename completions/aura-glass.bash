@@ -166,13 +166,63 @@ _aura_glass_mode() {
     COMPREPLY=( $(compgen -W "$subcmds" -- "$cur") )
 }
 
+_aura_glass_profile() {
+    local cur prev subcmds
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    subcmds="list apply save current export import remove -h --help"
+
+    case "$prev" in
+        apply|export|remove)
+            COMPREPLY=( $(compgen -W "sonoma visionos nordic minimal cyberpunk eco" -- "$cur") )
+            return 0
+            ;;
+        import)
+            COMPREPLY=( $(compgen -f -X '!*.json' -- "$cur") )
+            return 0
+            ;;
+    esac
+
+    COMPREPLY=( $(compgen -W "$subcmds" -- "$cur") )
+}
+
+_aura_glass_daemon() {
+    local cur prev subcmds
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    subcmds="status start stop restart run logs install-service uninstall-service -h --help"
+    COMPREPLY=( $(compgen -W "$subcmds" -- "$cur") )
+}
+
+_aura_glass_terminal() {
+    local cur prev subcmds
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    subcmds="status sync apply snippet -h --help"
+
+    case "$prev" in
+        apply|snippet)
+            COMPREPLY=( $(compgen -W "ghostty kitty alacritty wezterm foot ptyxis" -- "$cur") )
+            return 0
+            ;;
+    esac
+
+    COMPREPLY=( $(compgen -W "$subcmds" -- "$cur") )
+}
+
 _aura_glass_main() {
     local cur prev subcmds
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    subcmds="status mode accent shortcut doctor settings backup apply gdm update ext preview version help"
+    subcmds="status profile mode accent shortcut terminal daemon doctor settings backup apply gdm update ext preview version help"
 
     if [ "$COMP_CWORD" -eq 1 ]; then
         COMPREPLY=( $(compgen -W "$subcmds -h --help -v --version" -- "$cur") )
@@ -181,6 +231,9 @@ _aura_glass_main() {
 
     local cmd="${COMP_WORDS[1]}"
     case "$cmd" in
+        profile|profiles)
+            _aura_glass_profile
+            ;;
         mode)
             _aura_glass_mode
             ;;
@@ -195,6 +248,12 @@ _aura_glass_main() {
             if [ "$COMP_CWORD" -eq 2 ]; then
                 COMPREPLY=( $(compgen -W "status enable disable -h --help" -- "$cur") )
             fi
+            ;;
+        terminal|terminals)
+            _aura_glass_terminal
+            ;;
+        daemon)
+            _aura_glass_daemon
             ;;
         doctor)
             _aura_glass_doctor
@@ -218,5 +277,9 @@ complete -F _aura_glass_ext aura-glass-ext ./bin/aura-glass-ext bin/aura-glass-e
 complete -F _aura_glass_doctor aura-glass-doctor ./bin/aura-glass-doctor bin/aura-glass-doctor
 complete -F _aura_glass_backup aura-glass-backup ./bin/aura-glass-backup bin/aura-glass-backup
 complete -F _aura_glass_mode aura-glass-mode ./bin/aura-glass-mode bin/aura-glass-mode
+complete -F _aura_glass_profile aura-glass-profile ./bin/aura-glass-profile bin/aura-glass-profile
+complete -F _aura_glass_daemon aura-glass-daemon ./bin/aura-glass-daemon bin/aura-glass-daemon
+complete -F _aura_glass_terminal aura-glass-terminal ./bin/aura-glass-terminal bin/aura-glass-terminal
 complete -F _aura_glass_main aura-glass ./bin/aura-glass bin/aura-glass
+
 

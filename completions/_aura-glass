@@ -1,4 +1,4 @@
-#compdef aura-glass install.sh uninstall.sh aura-glass-apply aura-glass-ext aura-glass-doctor aura-glass-update-check aura-glass-backup aura-glass-mode
+#compdef aura-glass install.sh uninstall.sh aura-glass-apply aura-glass-ext aura-glass-doctor aura-glass-update-check aura-glass-backup aura-glass-mode aura-glass-profile aura-glass-daemon aura-glass-terminal
 
 # Zsh completion for Aura Glass suite
 
@@ -174,9 +174,12 @@ _aura_glass() {
     local -a subcmds
     subcmds=(
         'status:Display interactive desktop and glass status summary'
+        'profile:Manage visual atmosphere presets (sonoma, visionos, etc.)'
         'mode:Manage glass mode (frosted, transparent, solid, eco, auto)'
         'accent:Query, set, or auto-sync accent color from wallpaper'
         'shortcut:Configure GNOME keyboard shortcuts'
+        'terminal:Configure transparency & blur for modern terminals'
+        'daemon:Control background wallpaper & battery daemon'
         'doctor:Run full system health checks and diagnostics'
         'settings:Launch the Libadwaita settings application'
         'backup:Create, restore, export, or import configuration backups'
@@ -200,6 +203,12 @@ _aura_glass() {
     curcontext="${curcontext%:*:*}:aura-glass-$subcmd:"
 
     case "$subcmd" in
+        profile|profiles)
+            _arguments -s \
+                '1:profile action:(list apply save current export import remove)' \
+                '--json[Output results as JSON]' \
+                '(-h --help)'{-h,--help}'[Show profile help]'
+            ;;
         mode)
             _arguments -s \
                 '1:mode action:(get set toggle eco auto frosted transparent solid)' \
@@ -216,6 +225,17 @@ _aura_glass() {
             _arguments -s \
                 '1:shortcut action:(status enable disable install remove)' \
                 '(-h --help)'{-h,--help}'[Show shortcut help]'
+            ;;
+        terminal|terminals)
+            _arguments -s \
+                '1:terminal action:(status sync apply snippet)' \
+                '2:terminal:(ghostty kitty alacritty wezterm foot ptyxis)' \
+                '(-h --help)'{-h,--help}'[Show terminal help]'
+            ;;
+        daemon)
+            _arguments -s \
+                '1:daemon action:(status start stop restart run logs install-service uninstall-service)' \
+                '(-h --help)'{-h,--help}'[Show daemon help]'
             ;;
         doctor)
             _arguments -s \
@@ -264,6 +284,15 @@ case "${words[1]:t}" in
         ;;
     aura-glass-mode)
         _aura_glass_mode
+        ;;
+    aura-glass-profile)
+        _arguments -s '1:profile action:(list apply save current export import remove)' '(-h --help)'{-h,--help}'[Show profile help]'
+        ;;
+    aura-glass-daemon)
+        _arguments -s '1:daemon action:(status start stop restart run logs install-service uninstall-service)' '(-h --help)'{-h,--help}'[Show daemon help]'
+        ;;
+    aura-glass-terminal)
+        _arguments -s '1:terminal action:(status sync apply snippet)' '2:terminal:(ghostty kitty alacritty wezterm foot ptyxis)' '(-h --help)'{-h,--help}'[Show terminal help]'
         ;;
     aura-glass-update-check)
         _aura_glass_update_check

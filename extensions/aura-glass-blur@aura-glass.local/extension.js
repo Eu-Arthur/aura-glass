@@ -143,7 +143,7 @@ function isBlurrable(frameType) {
 }
 
 const AuraGlassToggle = GObject.registerClass(
-class AuraGlassToggle extends QuickSettings.QuickToggle {
+class AuraGlassToggle extends (QuickSettings.QuickMenuToggle || QuickSettings.QuickToggle) {
     _init(extension) {
         super._init({
             title: _('Aura Glass'),
@@ -152,6 +152,43 @@ class AuraGlassToggle extends QuickSettings.QuickToggle {
         });
         this._extension = extension;
         this.connect('clicked', () => this._extension._toggleGlassMode());
+
+        if (this.menu) {
+            this.menu.setHeader('preferences-desktop-display-symbolic', _('Aura Glass'), _('Glass & Transparency'));
+
+            this._modeSection = new PopupMenu.PopupMenuSection();
+            this.menu.addMenuItem(this._modeSection);
+
+            this._frostedItem = new PopupMenu.PopupMenuItem(_('Frosted Glass'));
+            this._frostedItem.connect('activate', () => this._extension._setMode('frosted'));
+            this._modeSection.addMenuItem(this._frostedItem);
+
+            this._transparentItem = new PopupMenu.PopupMenuItem(_('Transparent'));
+            this._transparentItem.connect('activate', () => this._extension._setMode('transparent'));
+            this._modeSection.addMenuItem(this._transparentItem);
+
+            this._solidItem = new PopupMenu.PopupMenuItem(_('Solid (Opaque)'));
+            this._solidItem.connect('activate', () => this._extension._setMode('solid'));
+            this._modeSection.addMenuItem(this._solidItem);
+
+            this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+
+            this._accentItem = new PopupMenu.PopupMenuItem(_('Sync Wallpaper Accent'));
+            this._accentItem.connect('activate', () => this._extension._syncAccent());
+            this.menu.addMenuItem(this._accentItem);
+
+            this._settingsItem = new PopupMenu.PopupMenuItem(_('Aura Glass Settings…'));
+            this._settingsItem.connect('activate', () => this._extension._openSettings());
+            this.menu.addMenuItem(this._settingsItem);
+        }
+    }
+
+    setModeSelection(mode) {
+        if (!this.menu)
+            return;
+        this._frostedItem?.setOrnament(mode === 'frosted' ? PopupMenu.Ornament.DOT : PopupMenu.Ornament.NONE);
+        this._transparentItem?.setOrnament(mode === 'transparent' ? PopupMenu.Ornament.DOT : PopupMenu.Ornament.NONE);
+        this._solidItem?.setOrnament(mode === 'solid' ? PopupMenu.Ornament.DOT : PopupMenu.Ornament.NONE);
     }
 });
 
@@ -167,6 +204,7 @@ class AuraGlassIndicator extends QuickSettings.SystemIndicator {
         return this._toggle;
     }
 });
+
 
 export default class AuraGlassBlurExtension extends Extension {
     enable() {
@@ -1058,6 +1096,48 @@ export default class AuraGlassBlurExtension extends Extension {
         }
     }
 
+    _setMode(mode) {
+        try {
+            const proc = Gio.Subprocess.new(
+                ['aura-glass-mode', 'set', mode, '--notify'],
+                Gio.SubprocessFlags.NONE
+            );
+            proc.wait_async(null, () => this._syncQuickToggle(true));
+        } catch (_) {
+            const confDir = GLib.build_filenamev([GLib.get_user_config_dir(), 'aura-glass']);
+            const stylingOff = GLib.build_filenamev([confDir, 'styling-off']);
+            const appSettings = this._openBmsSettings(BMS_SCHEMA_ID);
+            if (mode === 'solid') {
+                GLib.file_set_contents(stylingOff, '1\n');
+                if (appSettings)
+                    appSettings.set_boolean('blur', false);
+            } else {
+                try { GLib.unlink(stylingOff); } catch (_) {}
+                if (appSettings)
+                    appSettings.set_boolean('blur', true);
+            }
+            this._syncQuickToggle(true);
+        }
+    }
+
+    _syncAccent() {
+        try {
+            const proc = Gio.Subprocess.new(
+                ['aura-glass', 'accent', 'auto'],
+                Gio.SubprocessFlags.NONE
+            );
+            proc.wait_async(null, () => {
+                this._showOsd('preferences-desktop-wallpaper-symbolic', _('Aura Glass: Accent Synced'));
+            });
+        } catch (_) {}
+    }
+
+    _openSettings() {
+        try {
+            Gio.Subprocess.new(['aura-glass', 'settings'], Gio.SubprocessFlags.NONE);
+        } catch (_) {}
+    }
+
     _syncQuickToggle(showOsd = false) {
         if (!this._quickIndicator || !this._quickIndicator.toggle)
             return;
@@ -1091,6 +1171,8 @@ export default class AuraGlassBlurExtension extends Extension {
             toggle.checked = true;
             toggle.subtitle = _('Frosted');
         }
+
+        toggle.setModeSelection?.(mode);
 
         if (showOsd) {
             let iconName = 'weather-fog-symbolic';

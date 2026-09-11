@@ -42,9 +42,12 @@ ${C_BLD}USAGE:${C_OFF}
 
 ${C_BLD}COMMANDS:${C_OFF}
     ${C_CYA}status${C_OFF}                Display interactive desktop and glass status summary
+    ${C_CYA}profile${C_OFF} [list|apply]   Manage visual atmosphere presets (sonoma, visionos, etc.)
     ${C_CYA}mode${C_OFF} [get|set|toggle]   Manage glass mode (frosted, transparent, solid, eco, auto)
     ${C_CYA}accent${C_OFF} [auto|set|get]   Manage or auto-sync accent color with wallpaper
     ${C_CYA}shortcut${C_OFF} [enable|status] Configure GNOME keyboard shortcuts (<Super><Alt>G / A)
+    ${C_CYA}terminal${C_OFF} [status|sync] Configure transparency & blur for modern terminals
+    ${C_CYA}daemon${C_OFF} [status|start]  Control background wallpaper & battery monitor
     ${C_CYA}doctor${C_OFF}                Run full system health checks and diagnostics
     ${C_CYA}settings${C_OFF}              Launch the Libadwaita settings application
     ${C_CYA}backup${C_OFF} [create|restore] Create, restore, export, or import configuration backups
@@ -92,9 +95,9 @@ cmd_status() {
 
     local mode_label="$mode"
     case "$mode" in
-        frosted)     mode_label="${C_CYA}Frosted Glass${C_OFF} (full blur shaders)" ;;
-        transparent) mode_label="${C_BLU}Transparent${C_OFF} (translucent, no blur)" ;;
-        solid)       mode_label="${C_DIM}Solid Mode${C_OFF} (opaque surfaces)" ;;
+        frosted)     mode_label="${C_CYA}Frosted Glass${C_OFF} (blur shaders)" ;;
+        transparent) mode_label="${C_BLU}Transparent${C_OFF} (no blur)" ;;
+        solid)       mode_label="${C_DIM}Solid Mode${C_OFF} (opaque)" ;;
     esac
 
     # 2. Theme & Accent
@@ -109,6 +112,36 @@ cmd_status() {
     local accent="Default"
     if [ -r "$CONF_DIR/accent" ]; then
         accent="$(head -n 1 "$CONF_DIR/accent" 2>/dev/null || echo "Default")"
+    fi
+
+    # Accent color TrueColor swatch
+    local accent_display="$accent"
+    case "$accent" in
+        purple) accent_display=$'\033[38;2;145;65;172m■\033[0m purple (#9141ac)' ;;
+        blue)   accent_display=$'\033[38;2;53;132;228m■\033[0m blue (#3584e4)' ;;
+        teal)   accent_display=$'\033[38;2;33;144;164m■\033[0m teal (#2190a4)' ;;
+        green)  accent_display=$'\033[38;2;58;148;74m■\033[0m green (#3a944a)' ;;
+        yellow) accent_display=$'\033[38;2;200;136;0m■\033[0m yellow (#c88800)' ;;
+        orange) accent_display=$'\033[38;2;237;91;0m■\033[0m orange (#ed5b00)' ;;
+        red)    accent_display=$'\033[38;2;230;45;66m■\033[0m red (#e62d42)' ;;
+        pink)   accent_display=$'\033[38;2;213;97;153m■\033[0m pink (#d56199)' ;;
+        slate)  accent_display=$'\033[38;2;111;131;150m■\033[0m slate (#6f8396)' ;;
+    esac
+
+    # Active profile
+    local profile="custom"
+    if [ -r "$CONF_DIR/current-profile" ]; then
+        profile="$(head -n 1 "$CONF_DIR/current-profile" 2>/dev/null || echo "custom")"
+    fi
+
+    # Daemon state
+    local daemon_state="${C_DIM}inactive${C_OFF}"
+    if [ -f "$CONF_DIR/daemon.pid" ]; then
+        local dpid
+        dpid="$(head -n 1 "$CONF_DIR/daemon.pid" 2>/dev/null || true)"
+        if [ -n "$dpid" ] && kill -0 "$dpid" 2>/dev/null; then
+            daemon_state="${C_GRN}running${C_OFF} (PID $dpid)"
+        fi
     fi
 
     # 3. Power & Battery
@@ -149,18 +182,66 @@ cmd_status() {
         shell_ver="$(gnome-shell --version 2>/dev/null | awk '{print $3}')"
     fi
 
+    # Card row renderer with ANSI-aware padding
+    print_card_row() {
+        local label="$1"
+        local raw_val="$2"
+        local fmt_val="${3:-$raw_val}"
+        local prefix="  $label: "
+        while [ ${#prefix} -lt 16 ]; do prefix="$prefix "; done
+        local available=$((48 - ${#prefix}))
+        local pad_count=$((available - ${#raw_val}))
+        local pad=""
+        if [ "$pad_count" -gt 0 ]; then
+            pad="$(printf '%*s' "$pad_count" "")"
+        fi
+        printf '%s│%s%s%s%s%s│%s\n' "$C_BLU" "$C_OFF" "$prefix" "$fmt_val" "$pad" "$C_BLU" "$C_OFF"
+    }
+
     # Print dashboard card
+    local desk_raw="GNOME ${shell_ver:-?} (${session})"
+    local mode_raw="$mode"
+    case "$mode" in
+        frosted)     mode_raw="Frosted Glass (blur shaders)" ;;
+        transparent) mode_raw="Transparent (no blur)" ;;
+        solid)       mode_raw="Solid Mode (opaque)" ;;
+    esac
+
+    local accent_raw="$accent"
+    case "$accent" in
+        purple) accent_raw="■ purple (#9141ac)" ;;
+        blue)   accent_raw="■ blue (#3584e4)" ;;
+        teal)   accent_raw="■ teal (#2190a4)" ;;
+        green)  accent_raw="■ green (#3a944a)" ;;
+        yellow) accent_raw="■ yellow (#c88800)" ;;
+        orange) accent_raw="■ orange (#ed5b00)" ;;
+        red)    accent_raw="■ red (#e62d42)" ;;
+        pink)   accent_raw="■ pink (#d56199)" ;;
+        slate)  accent_raw="■ slate (#6f8396)" ;;
+    esac
+    local power_raw="AC Connected / Charging"
+    [ -n "${cap:-}" ] && power_raw="Battery Discharging$cap"
+    local eco_raw="enabled"
+    [ -f "$CONF_DIR/no-auto-eco" ] && eco_raw="disabled"
+    local blur_raw="Active"
+    [ -f "$CONF_DIR/perf-inhibited" ] && blur_raw="Paused (inhibit active)"
+    [ "$mode" = "solid" ] && blur_raw="Inactive (solid mode)"
+    local daemon_raw="inactive"
+    [ -f "$CONF_DIR/daemon.pid" ] && kill -0 "$(cat "$CONF_DIR/daemon.pid" 2>/dev/null)" 2>/dev/null && daemon_raw="running (PID $(cat "$CONF_DIR/daemon.pid" 2>/dev/null))"
+
     printf '\n%s╭────────────────────────────────────────────────╮%s\n' "$C_BLU" "$C_OFF"
     printf '%s│%s   %s✨ Aura Glass Desktop Status%s                  %s│%s\n' "$C_BLU" "$C_OFF" "$C_BLD" "$C_OFF" "$C_BLU" "$C_OFF"
     printf '%s├────────────────────────────────────────────────┤%s\n' "$C_BLU" "$C_OFF"
-    printf '%s│%s  Version:      %-35s%s│%s\n' "$C_BLU" "$C_OFF" "$ver" "$C_BLU" "$C_OFF"
-    printf '%s│%s  Desktop:      GNOME %-10s (%-18s) %s│%s\n' "$C_BLU" "$C_OFF" "${shell_ver:-?}" "${session}" "$C_BLU" "$C_OFF"
-    printf '%s│%s  Glass Mode:   %-44s%s│%s\n' "$C_BLU" "$C_OFF" "$mode_label" "$C_BLU" "$C_OFF"
-    printf '%s│%s  Shell Theme:  %-35s%s│%s\n' "$C_BLU" "$C_OFF" "$theme" "$C_BLU" "$C_OFF"
-    printf '%s│%s  Accent:       %-35s%s│%s\n' "$C_BLU" "$C_OFF" "$accent" "$C_BLU" "$C_OFF"
-    printf '%s│%s  Power Source: %-44s%s│%s\n' "$C_BLU" "$C_OFF" "$power_info" "$C_BLU" "$C_OFF"
-    printf '%s│%s  Auto-Eco:     %-44s%s│%s\n' "$C_BLU" "$C_OFF" "$auto_eco" "$C_BLU" "$C_OFF"
-    printf '%s│%s  Blur Shaders: %-44s%s│%s\n' "$C_BLU" "$C_OFF" "$blur_state" "$C_BLU" "$C_OFF"
+    print_card_row "Version" "$ver"
+    print_card_row "Desktop" "$desk_raw"
+    print_card_row "Profile" "$profile"
+    print_card_row "Glass Mode" "$mode_raw" "$mode_label"
+    print_card_row "Shell Theme" "$theme"
+    print_card_row "Accent" "$accent_raw" "$accent_display"
+    print_card_row "Daemon" "$daemon_raw" "$daemon_state"
+    print_card_row "Power Source" "$power_raw" "$power_info"
+    print_card_row "Auto-Eco" "$eco_raw" "$auto_eco"
+    print_card_row "Blur Shaders" "$blur_raw" "$blur_state"
     printf '%s╰────────────────────────────────────────────────╯%s\n\n' "$C_BLU" "$C_OFF"
 }
 
@@ -388,6 +469,9 @@ main() {
         status)
             cmd_status "$@"
             ;;
+        profile|profiles)
+            exec "$BIN_DIR/aura-glass-profile" "$@"
+            ;;
         mode)
             exec "$BIN_DIR/aura-glass-mode" "$@"
             ;;
@@ -396,6 +480,12 @@ main() {
             ;;
         shortcut|shortcuts)
             cmd_shortcut "$@"
+            ;;
+        terminal|terminals)
+            exec "$BIN_DIR/aura-glass-terminal" "$@"
+            ;;
+        daemon)
+            exec "$BIN_DIR/aura-glass-daemon" "$@"
             ;;
         doctor)
             exec "$BIN_DIR/aura-glass-doctor" "$@"
