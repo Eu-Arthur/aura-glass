@@ -10,6 +10,8 @@ export AURA_GLASS_CONF="$CONF_DIR"
 
 BUNDLES_DIR="$CONF_DIR/bundles"
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+ARCHIVE_HELPER="$REPO_ROOT/lib/safe_archive.py"
+[ -f "$ARCHIVE_HELPER" ] || ARCHIVE_HELPER="$REPO_ROOT/lib/aura-glass/safe_archive.py"
 
 C_BLD=$'\033[1m'
 C_CYA=$'\033[1;36m'
@@ -45,7 +47,7 @@ USAGE:
 
 SUBCOMMANDS:
     export     Archive current wallpaper, accent, profile, glow, and sound into a bundle
-    apply      Unpack and apply a complete atmosphere bundle atomically
+    apply      Validate, unpack and apply a complete atmosphere bundle
     inspect    Preview bundle contents, metadata, and assets without applying
     list       Show all available bundles in ~/.config/aura-glass/bundles/
 EOF
@@ -102,7 +104,8 @@ cmd_export() {
     mkdir -p "$BUNDLES_DIR"
     if [ -z "$out_file" ]; then
         local safe_name
-        safe_name="$(printf '%s' "$bundle_name" | tr '[:upper:] ' '[:lower:]-')"
+        safe_name="$(printf '%s' "$bundle_name" | tr '[:upper:] ' '[:lower:]-' | tr -c 'a-z0-9_-' '_')"
+        [ -n "$safe_name" ] || safe_name="bundle"
         out_file="$BUNDLES_DIR/${safe_name}.auraglass"
     fi
 
@@ -126,33 +129,24 @@ cmd_export() {
 
     # Copy profile if available
     local profile_file="$CONF_DIR/profiles/${profile}.json"
-    if [ -f "$profile_file" ]; then
+    if [[ "$profile" =~ ^[a-zA-Z0-9][a-zA-Z0-9\ _-]{0,127}$ ]] && [ -f "$profile_file" ]; then
         cp "$profile_file" "$tmp_stage/profile.json"
     fi
 
     # Write manifest.json and create compressed archive
-    python3 -c "
-import json, tarfile, os
-manifest = {
-    'version': '1.0',
-    'name': '$bundle_name',
-    'author': '$bundle_author',
-    'date': '$(date -Iseconds 2>/dev/null || date +%Y-%m-%d)',
-    'accent': '$accent',
-    'profile': '$profile',
-    'mode': '$mode',
-    'glow': '$glow',
-    'sound': '$sound',
-    'has_wallpaper': bool($has_wallpaper)
-}
-with open(os.path.join('$tmp_stage', 'manifest.json'), 'w', encoding='utf-8') as f:
+    python3 - "$tmp_stage" "$out_file" "$bundle_name" "$bundle_author" \
+        "$(date -Iseconds 2>/dev/null || date +%Y-%m-%d)" "$accent" "$profile" \
+        "$mode" "$glow" "$sound" "$has_wallpaper" <<'PYTHON'
+import json, tarfile, os, sys
+stage, output = sys.argv[1:3]
+manifest = dict(zip(('name', 'author', 'date', 'accent', 'profile', 'mode', 'glow', 'sound'), sys.argv[3:11]))
+manifest.update(version='1.0', has_wallpaper=sys.argv[11] == '1')
+with open(os.path.join(stage, 'manifest.json'), 'w', encoding='utf-8') as f:
     json.dump(manifest, f, indent=2)
-
-with tarfile.open('$out_file', 'w:gz') as tar:
-    for item in os.listdir('$tmp_stage'):
-        p = os.path.join('$tmp_stage', item)
-        tar.add(p, arcname=item)
-"
+with tarfile.open(output, 'w:gz') as tar:
+    for item in os.listdir(stage):
+        tar.add(os.path.join(stage, item), arcname=item)
+PYTHON
 
     ok "Exported theme bundle to $out_file."
     printf '  Name:    %s%s%s\n' "$C_BLD" "$bundle_name" "$C_OFF"
@@ -166,29 +160,18 @@ cmd_inspect() {
     [ -n "$bundle_file" ] || die "missing bundle file argument"
     [ -f "$bundle_file" ] || die "bundle file not found: $bundle_file"
 
-    python3 -c "
-import json, tarfile, sys
-try:
-    with tarfile.open('$bundle_file', 'r:gz') as tar:
-        f = tar.extractfile('manifest.json')
-        if not f:
-            print('error: missing manifest.json in bundle', file=sys.stderr)
-            sys.exit(1)
-        d = json.load(f)
-except Exception as e:
-    print(f'error: invalid or corrupted .auraglass archive: {e}', file=sys.stderr)
-    sys.exit(1)
-
-print(f'\033[1mAura Glass Theme Bundle: {d.get(\"name\", \"Unnamed\")}\033[0m\n')
-print(f'  Author:         {d.get(\"author\", \"unknown\")}')
-print(f'  Created:        {d.get(\"date\", \"unknown\")}')
-print(f'  Accent Color:   \033[1;36m{d.get(\"accent\", \"default\")}\033[0m')
-print(f'  Visual Profile: {d.get(\"profile\", \"custom\")}')
-print(f'  Glass Mode:     {d.get(\"mode\", \"frosted\")}')
-print(f'  Window Glow:    {d.get(\"glow\", \"off\")}')
-print(f'  Sound Theme:    {d.get(\"sound\", \"disabled\")}')
-print(f'  Wallpaper:      {\"included (wallpaper.png)\" if d.get(\"has_wallpaper\") else \"none\"}')
-"
+    local metadata
+    metadata="$(python3 "$ARCHIVE_HELPER" bundle-inspect "$bundle_file")" || die "invalid bundle"
+    python3 - "$metadata" <<'PYTHON'
+import json, sys
+d = json.loads(sys.argv[1])
+print('Aura Glass Theme Bundle: ' + d.get('name', 'Unnamed'))
+for label, key in [('Author', 'author'), ('Created', 'date'), ('Accent Color', 'accent'),
+                   ('Visual Profile', 'profile'), ('Glass Mode', 'mode'),
+                   ('Window Glow', 'glow'), ('Sound Theme', 'sound')]:
+    print(f'  {label}: {d.get(key, "")}')
+print('  Wallpaper: ' + ('included (wallpaper.png)' if d.get('has_wallpaper') else 'none'))
+PYTHON
 }
 
 cmd_apply() {
@@ -201,20 +184,14 @@ cmd_apply() {
     tmp_stage="$(mktemp -d "$tmp_base/aura-bundle-apply-XXXXXX")"
     CLEANUP_DIRS+=("$tmp_stage")
 
-    # Extract and parse metadata
-    eval "$(python3 -c "
-import json, tarfile, os, sys
-try:
-    with tarfile.open('$bundle_file', 'r:gz') as tar:
-        tar.extractall('$tmp_stage')
-    with open(os.path.join('$tmp_stage', 'manifest.json'), 'r', encoding='utf-8') as f:
-        d = json.load(f)
-    for k in ['accent', 'profile', 'mode', 'glow', 'sound', 'name']:
-        print(f'B_{k.upper()}=\"{d.get(k, \"\")}\"')
-except Exception as e:
-    print(f'error: failed to extract bundle: {e}', file=sys.stderr)
-    sys.exit(1)
-")"
+    # Read NUL-delimited data only after successful validation and extraction.
+    python3 "$ARCHIVE_HELPER" bundle-extract "$bundle_file" "$tmp_stage" \
+        > "$tmp_stage/.metadata" || die "failed to validate or extract bundle"
+    local -a metadata
+    mapfile -d '' -t metadata < "$tmp_stage/.metadata"
+    local B_ACCENT="${metadata[0]}" B_PROFILE="${metadata[1]}"
+    local B_GLOW="${metadata[3]}" B_SOUND="${metadata[4]}" B_NAME="${metadata[5]}"
+    mkdir -p "$CONF_DIR"
 
     printf '%sApplying Aura Glass Bundle: %s%s%s\n\n' "$C_BLD" "$C_CYA" "${B_NAME:-Bundle}" "$C_OFF"
 

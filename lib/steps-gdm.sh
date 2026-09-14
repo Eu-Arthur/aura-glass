@@ -360,6 +360,33 @@ detect_gdm_theme_files() {
     echo "/usr/share/gnome-shell/gnome-shell-theme.gresource"
 }
 
+# gresource can return success with an empty list for an invalid input.
+gdm_resource_valid() {
+    local entries
+    entries="$(gresource list "$1" 2>/dev/null)" || return 1
+    printf '%s\n' "$entries" | grep -q '^/org/gnome/shell/theme/.*\.css$'
+}
+
+# Keep the first system resource, including across repeated installations.
+backup_gdm_resource() {
+    local resource="$1" backup="${1}.aura-backup"
+    if [ -e "$backup" ] || [ -L "$backup" ]; then
+        if [ -L "$backup" ] || [ ! -f "$backup" ] || ! gdm_resource_valid "$backup"; then
+            warn "invalid existing GDM backup: $backup"
+            return 1
+        fi
+        return 0
+    fi
+    if ! sudo cp -n -- "$resource" "$backup"; then
+        warn "could not create the original GDM backup; theme installation stopped"
+        return 1
+    fi
+    if ! gdm_resource_valid "$backup"; then
+        warn "GDM backup validation failed; theme installation stopped"
+        return 1
+    fi
+}
+
 install_gdm() {
     local gdm_bg="${1:-${GDM_BG:-default}}"
     step "Installing the GDM Login Screen theme (requires sudo)"
@@ -456,74 +483,46 @@ install_gdm() {
         ok "GDM background configured from $wall_src ($target_wall)"
     fi
 
-    # 3. Compile and install GDM theme patched to link directly to file:///usr/share/backgrounds/aura-gdm.png
-    info "Preparing WhiteSur GDM resources..."
+    # 3. Build static assets as the regular user. Upstream shell scripts never
+    # run here; the privileged step only installs the finished resource bytes.
     local src="$SRC_CACHE/WhiteSur-gtk-theme"
     clone_pinned "$WHITESUR_REPO" "$WHITESUR_REF" "$src"
-
-    local gdm_res
+    local gdm_res gdm_backup_file
     gdm_res="$(detect_gdm_theme_files)"
-    local gdm_backup_record="$CONF_DIR/gdm-backup-path"
-    local gdm_backup_file=""
-
-    if [ -f "$gdm_res" ]; then
-        gdm_backup_file="${gdm_res}.aura-backup"
-        if [ "${DRY_RUN:-0}" = 1 ]; then
-            info "dry-run: sudo cp -f $gdm_res $gdm_backup_file"
-        else
-            sudo cp -f "$gdm_res" "$gdm_backup_file" 2>/dev/null || true
-            mkdir -p "$CONF_DIR"
-            echo "$gdm_backup_file" > "$gdm_backup_record"
-        fi
-    fi
+    gdm_backup_file="${gdm_res}.aura-backup"
 
     if [ "${DRY_RUN:-0}" = 1 ]; then
-        info "dry-run: compile GDM theme with background linking to $target_wall"
+        info "dry-run: compile static GDM assets without privileges from $src"
+        info "dry-run: preserve first backup $gdm_backup_file and install the compiled resource to $gdm_res"
     else
-        # Patch theme css so GDM directly loads file:///usr/share/backgrounds/aura-gdm.png
-        sed -i 's|resource:///org/gnome/shell/theme/background.png|file:///usr/share/backgrounds/aura-gdm.png|g' \
-            "$src"/other/gdm/theme/gnome-shell-*.css 2>/dev/null || true
-        sed -i 's|assets/background.png|file:///usr/share/backgrounds/aura-gdm.png|g' \
-            "$src"/src/main/gnome-shell/gnome-shell-*.css 2>/dev/null || true
-
-        # Neutralize WhiteSur internal network & system package checks that can freeze/hang
-        sed -i 's/prepare_deps/true/g' "$src"/libs/*.sh 2>/dev/null || true
-        sed -i 's/get_utc_epoch_time/true/g' "$src"/libs/*.sh 2>/dev/null || true
-
-        info "Compiling and applying GDM theme..."
-        sudo -v || { warn "sudo authentication required for GDM installation"; return 1; }
-
-        local gdm_log
-        gdm_log="$(mktemp /tmp/aura-gdm-install.XXXXXX.log)"
-        # shellcheck disable=SC2024
-        if sudo bash "$src/tweaks.sh" -g -b "$target_wall" -nb --silent-mode >"$gdm_log" 2>&1; then
-            mkdir -p "$CONF_DIR"
-            printf '%s\n' "dynamic" > "$CONF_DIR/gdm-installed"
-            ok "GDM login screen theme installed (dynamic wallpaper sync)"
-            rm -f "$gdm_log"
-        else
-            warn "GDM theme installation failed (log: $gdm_log)"
-            if [ -f "$gdm_log" ]; then
-                grep -E "ERROR|error|failed|fatal" "$gdm_log" | head -n 5 | while read -r err_line; do
-                    warn "  $err_line"
-                done
-            fi
-            # Automatic rollback fallback: restore original gresource if modified or corrupted
-            if [ -n "$gdm_backup_file" ] && [ -f "$gdm_backup_file" ]; then
-                warn "Triggering automatic GDM rollback fallback..."
-                sudo cp -f "$gdm_backup_file" "$gdm_res" 2>/dev/null || true
-                rm -f "$gdm_backup_record"
-                ok "GDM stock theme safely restored after failed build"
-            fi
-            rm -f "$gdm_log"
-
-            # Fall back cleanly to background & monitor sync
-            mkdir -p "$CONF_DIR"
-            printf '%s\n' "fallback" > "$CONF_DIR/gdm-installed"
-            install_gdm_sync_unit
-            ok "GDM configured in fallback mode (wallpaper & monitor sync active)"
-            return 0
+        local build_dir builder
+        build_dir="$(mktemp -d)"
+        builder="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)/tools/build-gdm-resource.py"
+        if ! python3 "$builder" "$src" "$gdm_res" "$build_dir/theme.gresource"; then
+            rm -rf -- "$build_dir"
+            warn "GDM compilation failed; the system theme resource was not modified"
+            return 1
         fi
+        if ! backup_gdm_resource "$gdm_res"; then
+            rm -rf -- "$build_dir"
+            return 1
+        fi
+        # The input is opened by the user's shell, before sudo. No user path
+        # is interpreted as a root-side program or read with root permissions.
+        # shellcheck disable=SC2024 # Open the input with user permissions deliberately.
+        if ! sudo install -o root -g root -m 0644 /dev/stdin "$gdm_res" < "$build_dir/theme.gresource"; then
+            rm -rf -- "$build_dir"
+            warn "GDM resource installation failed; restoring the system backup"
+            if ! sudo cp -f -- "$gdm_backup_file" "$gdm_res"; then
+                warn "GDM rollback failed; the original backup remains at $gdm_backup_file"
+            fi
+            return 1
+        fi
+        rm -rf -- "$build_dir"
+        mkdir -p "$CONF_DIR"
+        printf '%s\n' "$gdm_backup_file" > "$CONF_DIR/gdm-backup-path"
+        printf '%s\n' dynamic > "$CONF_DIR/gdm-installed"
+        ok "GDM theme compiled without privileges and installed (dynamic wallpaper sync)"
     fi
 
     # 4. Install and start user daemon for live wallpaper updates
@@ -533,32 +532,15 @@ install_gdm() {
 uninstall_gdm() {
     step "Restoring default GDM login screen"
 
-    local src="$SRC_CACHE/WhiteSur-gtk-theme"
     local restored=0
 
-    if [ -f "$src/tweaks.sh" ]; then
-        if [ "${DRY_RUN:-0}" = 1 ]; then
-            info "dry-run: sudo bash $src/tweaks.sh -r -g --silent-mode"
-            restored=1
-        else
-            sudo -v 2>/dev/null || true
-            sed -i 's/prepare_deps/true/g' "$src"/libs/*.sh 2>/dev/null || true
-            sed -i 's/get_utc_epoch_time/true/g' "$src"/libs/*.sh 2>/dev/null || true
-            if sudo bash "$src/tweaks.sh" -r -g --silent-mode >/dev/null 2>&1; then
-                restored=1
-            fi
-        fi
-    fi
-
-    # Fallback to direct backup file restoration if tweaks.sh didn't run or failed
+    # Restore system backups directly; never execute scripts from the cache.
     if [ "$restored" = 0 ]; then
         local gdm_res
         gdm_res="$(detect_gdm_theme_files)"
-        local recorded_bak=""
-        [ -f "$CONF_DIR/gdm-backup-path" ] && recorded_bak="$(cat "$CONF_DIR/gdm-backup-path" 2>/dev/null || true)"
+        # Never take a privileged restore source from user/imported settings.
 
         local backup_candidates=(
-            "$recorded_bak"
             "${gdm_res}.aura-backup"
             "${gdm_res}.bak"
             "/usr/share/gnome-shell/gnome-shell-theme.gresource.bak"
@@ -568,10 +550,17 @@ uninstall_gdm() {
 
         for bak in "${backup_candidates[@]}"; do
             if [ -n "$bak" ] && [ -f "$bak" ]; then
+                if [ -L "$bak" ] || ! gdm_resource_valid "$bak"; then
+                    warn "invalid GDM restore candidate: $bak"
+                    continue
+                fi
                 if [ "${DRY_RUN:-0}" = 1 ]; then
                     info "dry-run: sudo cp -f $bak $gdm_res"
                 else
-                    sudo cp -f "$bak" "$gdm_res" 2>/dev/null || true
+                    if ! sudo cp -f "$bak" "$gdm_res"; then
+                        warn "could not restore $gdm_res from $bak"
+                        continue
+                    fi
                 fi
                 restored=1
                 break

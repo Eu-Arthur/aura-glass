@@ -56,6 +56,10 @@ EOF
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 ok()  { printf '✓ %s\n' "$*"; }
 
+validate_profile_name() {
+    [[ "$1" =~ ^[a-zA-Z0-9][a-zA-Z0-9\ _-]{0,127}$ ]] || die "invalid profile name: use letters, numbers, spaces, _ or -"
+}
+
 get_current_state() {
     local mode="frosted"
     if [ -f "$CONF_DIR/styling-off" ]; then
@@ -105,6 +109,7 @@ cmd_current() {
 
 find_profile() {
     local target="$1"
+    validate_profile_name "$target"
     # 1. Check built-ins
     for row in "${BUILTIN_PROFILES[@]}"; do
         IFS='|' read -r id name mode radius accent desc <<< "$row"
@@ -118,11 +123,11 @@ find_profile() {
     local user_file="$PROFILES_DIR/$target.json"
     if [ -f "$user_file" ]; then
         local p_name p_mode p_radius p_accent p_desc
-        p_name="$(python3 -c "import json; d=json.load(open('$user_file')); print(d.get('name', '$target'))" 2>/dev/null || echo "$target")"
-        p_mode="$(python3 -c "import json; d=json.load(open('$user_file')); print(d.get('mode', 'frosted'))" 2>/dev/null || echo "frosted")"
-        p_radius="$(python3 -c "import json; d=json.load(open('$user_file')); print(d.get('radius', 'default'))" 2>/dev/null || echo "default")"
-        p_accent="$(python3 -c "import json; d=json.load(open('$user_file')); print(d.get('accent', 'auto'))" 2>/dev/null || echo "auto")"
-        p_desc="$(python3 -c "import json; d=json.load(open('$user_file')); print(d.get('description', 'User custom profile'))" 2>/dev/null || echo "User custom profile")"
+        p_name="$(python3 -c 'import json, sys; d=json.load(open(sys.argv[1])); print(d.get(sys.argv[2], sys.argv[3]))' "$user_file" "name" "$target" 2>/dev/null || echo "$target")"
+        p_mode="$(python3 -c 'import json, sys; d=json.load(open(sys.argv[1])); print(d.get(sys.argv[2], sys.argv[3]))' "$user_file" "mode" "frosted" 2>/dev/null || echo "frosted")"
+        p_radius="$(python3 -c 'import json, sys; d=json.load(open(sys.argv[1])); print(d.get(sys.argv[2], sys.argv[3]))' "$user_file" "radius" "default" 2>/dev/null || echo "default")"
+        p_accent="$(python3 -c 'import json, sys; d=json.load(open(sys.argv[1])); print(d.get(sys.argv[2], sys.argv[3]))' "$user_file" "accent" "auto" 2>/dev/null || echo "auto")"
+        p_desc="$(python3 -c 'import json, sys; d=json.load(open(sys.argv[1])); print(d.get(sys.argv[2], sys.argv[3]))' "$user_file" "description" "User custom profile" 2>/dev/null || echo "User custom profile")"
         printf 'custom|%s|%s|%s|%s|%s|%s\n' "$target" "$p_name" "$p_mode" "$p_radius" "$p_accent" "$p_desc"
         return 0
     fi
@@ -141,8 +146,8 @@ cmd_list() {
     IFS='|' read -r cur_prof _ _ _ <<< "$cur"
 
     if [ "$as_json" -eq 1 ]; then
-        python3 - <<PY
-import os, json
+        python3 - "$PROFILES_DIR" "$cur_prof" <<'PY'
+import os, json, sys
 
 builtins = [
     {"id": "sonoma", "name": "Sonoma", "mode": "frosted", "radius": "soft", "accent": "blue", "description": "Balanced macOS-style frosted glass with soft 16px corners", "type": "builtin"},
@@ -153,7 +158,7 @@ builtins = [
     {"id": "eco", "name": "Eco", "mode": "eco", "radius": "default", "accent": "auto", "description": "Maximum battery preservation with lightweight shaders", "type": "builtin"},
 ]
 
-pdir = "$PROFILES_DIR"
+pdir = sys.argv[1]
 custom = []
 if os.path.isdir(pdir):
     for f in sorted(os.listdir(pdir)):
@@ -167,7 +172,7 @@ if os.path.isdir(pdir):
             except Exception:
                 pass
 
-print(json.dumps({"current": "$cur_prof", "profiles": builtins + custom}, indent=2))
+print(json.dumps({"current": sys.argv[2], "profiles": builtins + custom}, indent=2))
 PY
         return 0
     fi
@@ -196,10 +201,10 @@ PY
             local id
             id="$(basename "$f" .json)"
             local p_mode p_radius p_accent p_desc
-            p_mode="$(python3 -c "import json; d=json.load(open('$f')); print(d.get('mode', 'frosted'))" 2>/dev/null || echo "frosted")"
-            p_radius="$(python3 -c "import json; d=json.load(open('$f')); print(d.get('radius', 'default'))" 2>/dev/null || echo "default")"
-            p_accent="$(python3 -c "import json; d=json.load(open('$f')); print(d.get('accent', 'auto'))" 2>/dev/null || echo "auto")"
-            p_desc="$(python3 -c "import json; d=json.load(open('$f')); print(d.get('description', ''))" 2>/dev/null || true)"
+            p_mode="$(python3 -c 'import json, sys; d=json.load(open(sys.argv[1])); print(d.get(sys.argv[2], sys.argv[3]))' "$f" "mode" "frosted" 2>/dev/null || echo "frosted")"
+            p_radius="$(python3 -c 'import json, sys; d=json.load(open(sys.argv[1])); print(d.get(sys.argv[2], sys.argv[3]))' "$f" "radius" "default" 2>/dev/null || echo "default")"
+            p_accent="$(python3 -c 'import json, sys; d=json.load(open(sys.argv[1])); print(d.get(sys.argv[2], sys.argv[3]))' "$f" "accent" "auto" 2>/dev/null || echo "auto")"
+            p_desc="$(python3 -c 'import json, sys; d=json.load(open(sys.argv[1])); print(d.get(sys.argv[2], sys.argv[3]))' "$f" "description" "" 2>/dev/null || true)"
             local mark=" "
             local color_id="$C_BLU$id$C_OFF"
             if [ "$id" = "$cur_prof" ]; then
@@ -271,6 +276,8 @@ cmd_save() {
     shift || true
     [ -n "$name" ] || die "missing profile name to save. Usage: aura-glass profile save <name> [--description '...']"
 
+    validate_profile_name "$name"
+
     # Check reserved built-in names
     for row in "${BUILTIN_PROFILES[@]}"; do
         IFS='|' read -r id _ <<< "$row"
@@ -301,18 +308,20 @@ cmd_save() {
     mkdir -p "$PROFILES_DIR"
     local target_file="$PROFILES_DIR/$name.json"
 
-    python3 -c "
+    python3 - "$name" "$cur_mode" "$cur_radius" "$cur_accent" "$desc" "$target_file" <<'PYTHON'
+import sys
 import json
 data = {
-    'name': '$name',
-    'mode': '$cur_mode',
-    'radius': '$cur_radius',
-    'accent': '$cur_accent',
-    'description': '$desc'
+    'name': sys.argv[1],
+    'mode': sys.argv[2],
+    'radius': sys.argv[3],
+    'accent': sys.argv[4],
+    'description': sys.argv[5]
 }
-with open('$target_file', 'w', encoding='utf-8') as f:
+with open(sys.argv[6], 'w', encoding='utf-8') as f:
     json.dump(data, f, indent=2)
-"
+PYTHON
+
     printf '%s\n' "$name" > "$CONF_DIR/current-profile"
     ok "Profile '$name' saved to $target_file."
 }
@@ -328,16 +337,18 @@ cmd_export() {
     IFS='|' read -r _ id name mode radius accent desc <<< "$prof_info"
 
     local json_content
-    json_content="$(python3 -c "
+    json_content="$(python3 - "$name" "$mode" "$radius" "$accent" "$desc" <<'PYTHON'
+import sys
 import json
 print(json.dumps({
-    'name': '$name',
-    'mode': '$mode',
-    'radius': '$radius',
-    'accent': '$accent',
-    'description': '$desc'
+    'name': sys.argv[1],
+    'mode': sys.argv[2],
+    'radius': sys.argv[3],
+    'accent': sys.argv[4],
+    'description': sys.argv[5]
 }, indent=2))
-")"
+PYTHON
+)"
 
     if [ -n "$outfile" ]; then
         printf '%s\n' "$json_content" > "$outfile"
@@ -353,20 +364,28 @@ cmd_import() {
     [ -f "$infile" ] || die "file not found: $infile"
 
     local p_name
-    p_name="$(python3 -c "
+    p_name="$(python3 - "$infile" <<'PYTHON'
 import json, sys
 try:
-    with open('$infile', 'r', encoding='utf-8') as f:
+    with open(sys.argv[1], 'r', encoding='utf-8') as f:
         d = json.load(f)
+    if not isinstance(d, dict):
+        raise ValueError('profile must be an object')
+    for key in ('name', 'mode', 'radius', 'accent', 'description'):
+        value = d.get(key, '')
+        if not isinstance(value, str) or any(ord(c) < 32 or c == '|' for c in value):
+            raise ValueError('invalid profile field')
     print(d.get('name', ''))
 except Exception as e:
     sys.exit(1)
-")" || die "invalid profile JSON format in $infile"
+PYTHON
+)" || die "invalid profile JSON format in $infile"
 
     [ -n "$p_name" ] || p_name="$(basename "$infile" .json)"
 
+    validate_profile_name "$p_name"
     mkdir -p "$PROFILES_DIR"
-    cp -f "$infile" "$PROFILES_DIR/$p_name.json"
+    cp --remove-destination -- "$infile" "$PROFILES_DIR/$p_name.json"
     ok "Profile '$p_name' imported successfully."
 }
 
@@ -381,6 +400,7 @@ cmd_remove() {
         fi
     done
 
+    validate_profile_name "$target"
     local target_file="$PROFILES_DIR/$target.json"
     if [ -f "$target_file" ]; then
         rm -f "$target_file"

@@ -131,42 +131,117 @@ apply_vscode() {
     for dir in "${config_dirs[@]}"; do
         [ -d "$dir" ] || continue
         local settings="$dir/settings.json"
-        mkdir -p "$dir"
+        python3 - "$hex" "$settings" <<'PYTHON'
+import sys
+import json
+import os
+import secrets
+import stat
 
-        if [ -f "$settings" ] && [ ! -f "$settings.aurabackup" ]; then
-            cp -f "$settings" "$settings.aurabackup"
-        fi
-
-        python3 -c "
-import json, os
-
-path = '$settings'
-data = {}
-if os.path.exists(path):
-    try:
-        with open(path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-    except Exception:
-        pass
-
-cc = data.get('workbench.colorCustomizations', {})
-cc.update({
+path = sys.argv[2]
+colors = {
     'titleBar.activeBackground': '#1c1f2ad0',
     'titleBar.inactiveBackground': '#161822a0',
     'activityBar.background': '#141720e0',
-    'statusBar.background': '${hex}d5',
-    'statusBar.noFolderBackground': '${hex}b0',
-    'focusBorder': '$hex',
+    'statusBar.background': sys.argv[1] + 'd5',
+    'statusBar.noFolderBackground': sys.argv[1] + 'b0',
+    'focusBorder': sys.argv[1],
     'menu.background': '#1c1f2ae8',
     'editorGroupHeader.tabsBackground': '#181a24d0',
     'tab.activeBackground': '#222634e0',
     'tab.inactiveBackground': '#181a2490'
-})
-data['workbench.colorCustomizations'] = cc
+}
 
-with open(path, 'w', encoding='utf-8') as f:
-    json.dump(data, f, indent=2)
-"
+def unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError('duplicate JSON keys are not supported')
+        result[key] = value
+    return result
+
+def invalid_constant(_value):
+    raise ValueError('non-finite JSON numbers are not supported')
+
+def read_regular(directory, name):
+    try:
+        fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+    except FileNotFoundError:
+        return None
+    with os.fdopen(fd, 'rb') as source:
+        metadata = os.fstat(source.fileno())
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+            raise ValueError('settings and backups must be regular files without links')
+        content = source.read(8 * 1024 * 1024 + 1)
+        if len(content) > 8 * 1024 * 1024:
+            raise ValueError('settings or backup exceeds 8 MiB')
+        return content
+
+def write_temp(directory, content):
+    name = '.aura-settings-' + secrets.token_hex(16)
+    fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                 0o600, dir_fd=directory)
+    try:
+        with os.fdopen(fd, 'wb') as output:
+            output.write(content)
+            output.flush()
+            os.fsync(output.fileno())
+    except BaseException:
+        os.unlink(name, dir_fd=directory)
+        raise
+    return name
+
+def apply():
+    directory = os.open(os.path.dirname(path), os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        original = read_regular(directory, 'settings.json')
+        # JSONC cannot be round-tripped with the standard JSON parser. Refuse
+        # unsupported input instead of silently replacing all user preferences.
+        try:
+            data = {} if original is None else json.loads(
+                original.decode('utf-8'), object_pairs_hook=unique_object,
+                parse_constant=invalid_constant)
+        except (ValueError, UnicodeError) as exc:
+            raise ValueError('cannot safely parse settings; for JSONC, merge '
+                             '`aura-glass apps snippet vscode` in the editor') from exc
+        if not isinstance(data, dict):
+            raise ValueError('settings must be a JSON object')
+        cc = data.get('workbench.colorCustomizations', {})
+        if not isinstance(cc, dict):
+            raise ValueError('workbench.colorCustomizations must be a JSON object')
+        cc.update(colors)
+        data['workbench.colorCustomizations'] = cc
+        updated = (json.dumps(data, indent=2, allow_nan=False) + '\n').encode('utf-8')
+
+        # Validate the input completely before creating a backup. Publish a
+        # complete backup exclusively, preserving the first original forever.
+        backup = read_regular(directory, 'settings.json.aurabackup')
+        if original is not None and backup is None:
+            temporary = write_temp(directory, original)
+            try:
+                os.link(temporary, 'settings.json.aurabackup',
+                        src_dir_fd=directory, dst_dir_fd=directory, follow_symlinks=False)
+            finally:
+                os.unlink(temporary, dir_fd=directory)
+
+        temporary = write_temp(directory, updated)
+        try:
+            os.replace(temporary, 'settings.json', src_dir_fd=directory, dst_dir_fd=directory)
+        finally:
+            try:
+                os.unlink(temporary, dir_fd=directory)
+            except FileNotFoundError:
+                pass
+    finally:
+        os.close(directory)
+
+try:
+    apply()
+except (OSError, ValueError) as exc:
+    print(f'error: VS Code styling failed for {path!r}: {exc}', file=sys.stderr)
+    sys.exit(1)
+PYTHON
+
         count=$((count + 1))
     done
 
@@ -221,20 +296,22 @@ apply_obsidian() {
             # Enable snippet in app.json if present
             local app_json="$obs_dir/app.json"
             if [ -f "$app_json" ]; then
-                python3 -c "
+                python3 - "$app_json" <<'PYTHON'
+import sys
 import json
 try:
-    with open('$app_json', 'r', encoding='utf-8') as f:
+    with open(sys.argv[1], 'r', encoding='utf-8') as f:
         d = json.load(f)
     snips = d.get('enabledCssSnippets', [])
     if 'aura-glass' not in snips:
         snips.append('aura-glass')
         d['enabledCssSnippets'] = snips
-        with open('$app_json', 'w', encoding='utf-8') as f:
+        with open(sys.argv[1], 'w', encoding='utf-8') as f:
             json.dump(d, f, indent=2)
 except Exception:
     pass
-"
+PYTHON
+
             fi
             count=$((count + 1))
         done < <(find "$root" -maxdepth 3 -type d -name ".obsidian" -print0 2>/dev/null || true)

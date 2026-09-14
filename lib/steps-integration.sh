@@ -142,6 +142,7 @@ install_panel_blur_unit() {
 }
 
 install_cli_tools() {
+    run install -Dm644 "$REPO_ROOT/lib/safe_archive.py" "$HOME/.local/lib/aura-glass/safe_archive.py"
     for tool in aura-glass aura-glass-ext aura-glass-doctor aura-glass-backup aura-glass-mode; do
         if [ -f "$REPO_ROOT/bin/$tool" ]; then
             run install -Dm755 "$REPO_ROOT/bin/$tool" "$HOME/.local/bin/$tool"

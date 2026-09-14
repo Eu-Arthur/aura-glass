@@ -52,15 +52,54 @@ die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 ok()  { printf '✓ %s\n' "$*"; }
 log() { printf '[%s] %s\n' "$(date +'%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG_FILE" 2>/dev/null || true; }
 
+# Identify the process before signalling it, and keep a pidfd so a recycled
+# PID cannot redirect TERM/KILL to another process during the stop timeout.
+daemon_process() {
+    python3 - "$PID_FILE" "${BASH_SOURCE[0]}" "$1" <<'PYTHON'
+import os
+from pathlib import Path
+import re
+import select
+import signal
+import sys
+
+try:
+    with open(sys.argv[1], encoding='ascii') as stream:
+        raw = stream.read(64).strip()
+    if not re.fullmatch(r'[1-9][0-9]{0,9}', raw) or int(raw) <= 1:
+        sys.exit(1)
+    pid = int(raw)
+    fd = os.pidfd_open(pid)
+    try:
+        proc = Path('/proc') / str(pid)
+        args = (proc / 'cmdline').read_bytes().split(b'\0')
+        if len(args) < 4 or Path(os.fsdecode(args[0])).name != 'bash' or args[2] != b'run':
+            sys.exit(1)
+        script = Path(os.fsdecode(args[1]))
+        if not script.is_absolute():
+            script = Path(os.readlink(proc / 'cwd')) / script
+        if script.resolve() != Path(sys.argv[2]).resolve():
+            sys.exit(1)
+        if sys.argv[3] == 'stop':
+            signal.pidfd_send_signal(fd, signal.SIGTERM)
+            poller = select.poll()
+            poller.register(fd, select.POLLIN)
+            if not poller.poll(3000):
+                signal.pidfd_send_signal(fd, signal.SIGKILL)
+        else:
+            print(pid)
+    finally:
+        os.close(fd)
+except (OSError, ValueError, UnicodeError, OverflowError):
+    sys.exit(1)
+except AttributeError:
+    print('error: daemon process checks require Python with Linux pidfd support', file=sys.stderr)
+    sys.exit(1)
+PYTHON
+}
+
 is_running() {
-    if [ -f "$PID_FILE" ]; then
-        local pid
-        pid="$(head -n 1 "$PID_FILE" 2>/dev/null || true)"
-        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-            return 0
-        fi
-    fi
-    return 1
+    daemon_process status >/dev/null 2>&1
 }
 
 cmd_status() {
@@ -164,20 +203,8 @@ cmd_stop() {
         return 0
     fi
 
-    local pid
-    pid="$(cat "$PID_FILE")"
-    printf 'Stopping aura-glass-daemon (PID %s)... ' "$pid"
-    kill "$pid" 2>/dev/null || true
-
-    local count=0
-    while kill -0 "$pid" 2>/dev/null && [ "$count" -lt 15 ]; do
-        sleep 0.2
-        count=$((count + 1))
-    done
-
-    if kill -0 "$pid" 2>/dev/null; then
-        kill -9 "$pid" 2>/dev/null || true
-    fi
+    printf 'Stopping aura-glass-daemon... '
+    daemon_process stop || die "daemon identity changed or stop failed; no further signal sent"
     rm -f "$PID_FILE"
     printf '%s[ OK ]%s\n' "$C_GRN" "$C_OFF"
 }
@@ -210,6 +237,14 @@ Type=simple
 ExecStart=$bin_path run
 Restart=on-failure
 RestartSec=5s
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+UMask=0077
 Environment=PATH=$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin
 
 [Install]

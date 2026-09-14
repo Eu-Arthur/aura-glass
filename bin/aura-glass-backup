@@ -5,6 +5,9 @@ set -euo pipefail
 CONF_DIR="${AURA_GLASS_DIR:-${TAHOE_GLASS_DIR:-$HOME/.config/aura-glass}}"
 [ -d "$CONF_DIR" ] || [ ! -d "$HOME/.config/tahoe-glass" ] || CONF_DIR="$HOME/.config/tahoe-glass"
 BACKUP_DIR="$CONF_DIR/backups"
+SCRIPT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+ARCHIVE_HELPER="$SCRIPT_ROOT/lib/safe_archive.py"
+[ -f "$ARCHIVE_HELPER" ] || ARCHIVE_HELPER="$SCRIPT_ROOT/lib/aura-glass/safe_archive.py"
 
 # Guard: Refuse running as root to prevent permission corruption
 if [ "$(id -u)" -eq 0 ]; then
@@ -59,12 +62,7 @@ verify_archive() {
         die "corrupt archive or not a valid gzip file: $archive"
     fi
 
-    # Inspect contents for path traversal (leading slash or ../)
-    local bad_paths
-    bad_paths="$(tar -tzf "$archive" 2>/dev/null | grep -E '^/|\.\./' || true)"
-    if [ -n "$bad_paths" ]; then
-        die "security violation: archive contains forbidden absolute or traversal paths:\n$bad_paths"
-    fi
+    python3 "$ARCHIVE_HELPER" verify "$archive" || die "unsafe or invalid backup archive"
     return 0
 }
 
@@ -75,7 +73,8 @@ collect_and_pack() {
 
     local stage_dir
     stage_dir="$(mktemp -d "${TMPDIR:-/tmp}/aura-glass-backup.XXXXXX")"
-    trap 'rm -rf "$stage_dir"' EXIT
+    trap 'rm -rf -- "${BACKUP_STAGE:-}"' EXIT
+    BACKUP_STAGE="$stage_dir"
 
     # 1. Copy config files (excluding backups and cache)
     if [ -d "$CONF_DIR" ]; then
@@ -83,7 +82,7 @@ collect_and_pack() {
             [ -e "$item" ] || continue
             local bname="${item##*/}"
             case "$bname" in
-                backups|cache) continue ;;
+                backups|cache|repo-path|gdm-backup-path) continue ;;
                 *) cp -a "$item" "$stage_dir/" ;;
             esac
         done
@@ -224,7 +223,7 @@ cmd_restore() {
     chmod 700 "$CONF_DIR"
 
     # Extract
-    tar -xzf "$archive" -C "$CONF_DIR"
+    python3 "$ARCHIVE_HELPER" extract "$archive" "$CONF_DIR" || die "backup extraction failed"
     chmod 700 "$CONF_DIR"
     find "$CONF_DIR" -maxdepth 1 -type f -exec chmod 600 {} + 2>/dev/null || true
 

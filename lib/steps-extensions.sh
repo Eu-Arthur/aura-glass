@@ -15,7 +15,7 @@
 # metadata stops at 49 when you ask for 50 — so the download is always checked
 # against the running shell rather than trusted.
 ext_supports_shell() {
-    local dir_or_zip="$1" major="$2"
+    local dir_or_zip="$1" major="$2" expected_uuid="${3:-}"
     local meta
     if [ -d "$dir_or_zip" ]; then
         meta="$(cat "$dir_or_zip/metadata.json" 2>/dev/null)" || return 1
@@ -26,22 +26,25 @@ ext_supports_shell() {
 import sys, json
 try:
     d = json.load(sys.stdin)
-except Exception:
+    versions = d.get("shell-version", [])
+    compatible = isinstance(versions, list) and str(sys.argv[1]) in [str(v).split(".")[0] for v in versions]
+    identity = not sys.argv[2] or d.get("uuid") == sys.argv[2]
+    sys.exit(0 if compatible and identity else 1)
+except (ValueError, TypeError, AttributeError):
     sys.exit(1)
-sys.exit(0 if str(sys.argv[1]) in [str(v).split(".")[0] for v in d.get("shell-version", [])] else 1)
-' "$major"
+' "$major" "$expected_uuid"
 }
 
 install_ext_ego() {
     local uuid="$1" tmp url info_json ver
 
-    if [ -d "$EXT_DIR/$uuid" ] && ext_supports_shell "$EXT_DIR/$uuid" "$GNOME_MAJOR"; then
+    if [ -d "$EXT_DIR/$uuid" ] && ext_supports_shell "$EXT_DIR/$uuid" "$GNOME_MAJOR" "$uuid"; then
         skip "$uuid already installed"
         return 0
     fi
     # Distro-packaged extensions (user-theme on most systems) count as present.
     if [ -d "/usr/share/gnome-shell/extensions/$uuid" ] \
-       && ext_supports_shell "/usr/share/gnome-shell/extensions/$uuid" "$GNOME_MAJOR"; then
+       && ext_supports_shell "/usr/share/gnome-shell/extensions/$uuid" "$GNOME_MAJOR" "$uuid"; then
         skip "$uuid provided by the system"
         return 0
     fi
@@ -51,9 +54,22 @@ install_ext_ego() {
         return 0
     fi
 
-    info_json="$(curl --connect-timeout 15 --retry 2 -sf "https://extensions.gnome.org/extension-info/?uuid=$uuid&shell_version=$GNOME_MAJOR")" \
+    info_json="$(curl --proto '=https' --connect-timeout 15 --max-time 60 --retry 2 --retry-max-time 120 -sf "https://extensions.gnome.org/extension-info/?uuid=$uuid&shell_version=$GNOME_MAJOR")" \
         || { warn "$uuid: not listed for GNOME $GNOME_MAJOR — skipped"; return 1; }
-    url="$(printf '%s' "$info_json" | python3 -c 'import sys,json;print(json.load(sys.stdin)["download_url"])')" \
+    url="$(printf '%s' "$info_json" | python3 -c '
+import sys, json
+from urllib.parse import urlsplit
+try:
+    url = json.load(sys.stdin)["download_url"]
+    parsed = urlsplit(url)
+    if (not isinstance(url, str) or not url.startswith("/download-extension/")
+            or parsed.scheme or parsed.netloc or parsed.fragment
+            or "\\" in url or any(ord(c) <= 32 or ord(c) == 127 for c in url)):
+        sys.exit(1)
+    print(url)
+except (ValueError, TypeError, KeyError, AttributeError):
+    sys.exit(1)
+')" \
         || { warn "$uuid: no download url — skipped"; return 1; }
 
     # Deliberately not `trap ... RETURN`: that trap is not scoped to this
@@ -62,13 +78,14 @@ install_ext_ego() {
     # turns the stale cleanup into a fatal "unbound variable" mid-install.
     tmp="$(mktemp -d)"
     local rc=0
-    if ! curl --connect-timeout 15 --retry 2 -sLo "$tmp/e.zip" "https://extensions.gnome.org$url"; then
+    if ! curl --proto '=https' --proto-redir '=https' --max-redirs 5 \
+        --connect-timeout 15 --max-time 300 --retry 2 --retry-max-time 600 -fsSLo "$tmp/e.zip" "https://extensions.gnome.org$url"; then
         warn "$uuid: download failed — skipped"; rc=1
     elif ! unzip -tq "$tmp/e.zip" >/dev/null 2>&1; then
         warn "$uuid: downloaded archive is corrupt or incomplete — skipped"; rc=1
-    elif ! ext_supports_shell "$tmp/e.zip" "$GNOME_MAJOR"; then
-        ver="$(unzip -p "$tmp/e.zip" metadata.json | python3 -c 'import sys,json;print(json.load(sys.stdin).get("shell-version"))')"
-        warn "$uuid: published build supports $ver, not GNOME $GNOME_MAJOR — skipped"; rc=1
+    elif ! ext_supports_shell "$tmp/e.zip" "$GNOME_MAJOR" "$uuid"; then
+        ver="$(unzip -p "$tmp/e.zip" metadata.json | python3 -c 'import sys,json;print(json.load(sys.stdin).get("shell-version"))' 2>/dev/null || echo unknown)"
+        warn "$uuid: incompatible extension identity or GNOME version (published versions: $ver) — skipped"; rc=1
     elif ! gnome-extensions install --force "$tmp/e.zip" >/dev/null; then
         warn "$uuid: install failed — skipped"; rc=1
     else
@@ -248,7 +265,7 @@ install_openbar() {
         return
     fi
 
-    if [ -d "$EXT_DIR/$uuid" ] && ext_supports_shell "$EXT_DIR/$uuid" "$GNOME_MAJOR" \
+    if [ -d "$EXT_DIR/$uuid" ] && ext_supports_shell "$EXT_DIR/$uuid" "$GNOME_MAJOR" "$uuid" \
        && patch_stamp_current openbar-patch "$REPO_ROOT/patches/openbar-gnome50.patch" \
        && [ "${FORCE:-0}" != 1 ]; then
         skip "$uuid already patched for GNOME $GNOME_MAJOR"
@@ -294,7 +311,7 @@ install_custom_osd() {
         return 0
     fi
 
-    if [ -d "$EXT_DIR/$uuid" ] && ext_supports_shell "$EXT_DIR/$uuid" "$GNOME_MAJOR" \
+    if [ -d "$EXT_DIR/$uuid" ] && ext_supports_shell "$EXT_DIR/$uuid" "$GNOME_MAJOR" "$uuid" \
        && patch_stamp_current custom-osd-patch "$REPO_ROOT/patches/custom-osd-gnome50.patch" \
        && [ "${FORCE:-0}" != 1 ]; then
         skip "$uuid already patched for GNOME $GNOME_MAJOR"

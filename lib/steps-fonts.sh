@@ -85,8 +85,8 @@ install_font_inter() {
 
 install_font_misans() {
     local latin="$SRC_CACHE/MiSans-Latin" arabic="$SRC_CACHE/MiSans-Arabic"
-    fetch_zip_pinned "$MISANS_LATIN_URL"  "$MISANS_LATIN_SHA256"  "$latin"  warn
-    fetch_zip_pinned "$MISANS_ARABIC_URL" "$MISANS_ARABIC_SHA256" "$arabic" warn
+    fetch_zip_pinned "$MISANS_LATIN_URL"  "$MISANS_LATIN_SHA256"  "$latin"
+    fetch_zip_pinned "$MISANS_ARABIC_URL" "$MISANS_ARABIC_SHA256" "$arabic"
     if [ "${DRY_RUN:-0}" = 1 ]; then
         info "dry-run: copy the MiSans Latin and Arabic UI faces into $FONT_DIR/misans"
         info "dry-run: write $MISANS_ARABIC_CONF"

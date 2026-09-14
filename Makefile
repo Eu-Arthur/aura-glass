@@ -20,7 +20,7 @@ doctor:
 
 lint:
 	@echo "==> Validating shell syntax..."
-	@bash -n $$(find . -type f \( -name '*.sh' -o -name '*.bash' -o -path './bin/*' -o -path './tools/hooks/*' \))
+	@while IFS= read -r -d '' script; do bash -n "$$script" || exit 1; done < <(find . -type f \( -name '*.sh' -o -name '*.bash' -o -path './bin/*' -o -path './tools/hooks/*' \) -print0)
 	@echo "==> Validating python syntax..."
 	@python3 -m py_compile $$(find . -type f -name '*.py')
 	@echo "    ✓ all syntax checks passed"

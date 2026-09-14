@@ -119,15 +119,15 @@ cmd_generate() {
     printf '%sGenerating %s 4K procedural wallpaper (%s style, %s accent)...%s\n' \
         "$C_BLD" "${width}x${height}" "$style" "$accent" "$C_OFF"
 
-    python3 -c "
+    python3 - "$style" "$accent" "$width" "$height" "$output" <<'PYTHON'
 import sys, math, random
 from PIL import Image, ImageDraw, ImageFilter
 
-style = '$style'
-accent = '$accent'
-w = int('$width')
-h = int('$height')
-outfile = '$output'
+style = sys.argv[1]
+accent = sys.argv[2]
+w = int(sys.argv[3])
+h = int(sys.argv[4])
+outfile = sys.argv[5]
 
 PALETTES = {
     'blue':   {'primary': (53, 132, 228),  'secondary': (28, 113, 216), 'highlight': (98, 160, 234)},
@@ -179,7 +179,8 @@ blurred = blurred.filter(ImageFilter.GaussianBlur(radius=sw // 8))
 final_img = blurred.resize((w, h), Image.Resampling.BICUBIC)
 
 final_img.save(outfile, 'PNG', optimize=True)
-"
+PYTHON
+
 
     ok "Wallpaper generated: $output"
 

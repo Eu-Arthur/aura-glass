@@ -458,9 +458,10 @@ EOF
             local current_list
             current_list="$(gsettings get org.gnome.settings-daemon.plugins.media-keys custom-keybindings 2>/dev/null || echo "[]")"
             local cleaned_list
-            cleaned_list="$(python3 -c "
+            cleaned_list="$(python3 - "$current_list" 2>/dev/null <<'PYTHON'
+import sys
 import ast
-raw = '''$current_list'''
+raw = sys.argv[1]
 if raw.startswith('@as '): raw = raw[4:]
 try:
     arr = ast.literal_eval(raw)
@@ -468,7 +469,8 @@ except Exception:
     arr = []
 arr = [p for p in arr if 'aura-glass' not in p]
 print(repr(arr))
-" 2>/dev/null || echo "[]")"
+PYTHON
+)" || cleaned_list="[]"
             gsettings set org.gnome.settings-daemon.plugins.media-keys custom-keybindings "$cleaned_list"
             gsettings reset-recursively "$schema:$path_toggle" 2>/dev/null || true
             gsettings reset-recursively "$schema:$path_settings" 2>/dev/null || true

@@ -50,10 +50,11 @@ OutputProfile=stereo
 EOF
 
     # 2. Synthesize audio files with python wave standard library
-    python3 -c "
+    python3 - "$target_dir" <<'PYTHON'
+import sys
 import wave, math, struct, os
 
-target = '$target_dir'
+target = sys.argv[1]
 rate = 44100
 
 def write_wav(filename, duration, gen_fn):
@@ -106,7 +107,8 @@ def tick_wave(t, dur):
     return math.sin(2 * math.pi * 2200 * t) * decay * 0.6
 
 write_wav('audio-volume-change.wav', 0.06, tick_wave)
-"
+PYTHON
+
 }
 
 cmd_status() {

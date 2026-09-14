@@ -224,7 +224,8 @@ fetch_tarball_pinned() {
         return 0
     fi
     local tmp; tmp="$(mktemp -d)"
-    curl --connect-timeout 15 --retry 2 -fsSL -o "$tmp/archive" "$url" \
+    curl --proto '=https' --proto-redir '=https' --max-redirs 5 \
+        --connect-timeout 15 --max-time 300 --retry 2 --retry-max-time 600 -fsSL -o "$tmp/archive" "$url" \
         || { rm -rf "$tmp"; die "could not download $url"; }
     local got; got="$(sha256sum "$tmp/archive")"; got="${got%% *}"
     if [ "$got" != "$sha" ]; then
@@ -245,29 +246,21 @@ fetch_tarball_pinned() {
 # unzip rather than tar: the archives are built on macOS and carry __MACOSX
 # resource forks, which -x drops so they never reach a font directory.
 #
-# And the mismatch is answerable. Xiaomi serves MiSans from a bare filename
-# with no version in it, so the URL moves under the pin every time they cut a
-# release; dying there would break every install the day that happens, for an
-# archive whose contents are fonts. Pass "warn" for those and the checksum
-# becomes a notice rather than a wall. Anything served from a versioned URL —
-# a GitHub release asset — keeps the default, which is die.
+# A changed upstream archive requires reviewing and updating the pinned hash.
 fetch_zip_pinned() {
-    local url="$1" sha="$2" dest="$3" on_mismatch="${4:-die}"
+    local url="$1" sha="$2" dest="$3"
     if [ "${DRY_RUN:-0}" = 1 ]; then
         info "dry-run: download $url and unpack it into $dest"
         return 0
     fi
     local tmp; tmp="$(mktemp -d)"
-    curl --connect-timeout 15 --retry 2 -fsSL -o "$tmp/archive.zip" "$url" \
+    curl --proto '=https' --proto-redir '=https' --max-redirs 5 \
+        --connect-timeout 15 --max-time 300 --retry 2 --retry-max-time 600 -fsSL -o "$tmp/archive.zip" "$url" \
         || { rm -rf "$tmp"; die "could not download $url"; }
     local got; got="$(sha256sum "$tmp/archive.zip")"; got="${got%% *}"
     if [ "$got" != "$sha" ]; then
-        if [ "$on_mismatch" = warn ]; then
-            warn "$url no longer matches its pinned checksum — upstream has published a new build (expected $sha, got $got)"
-        else
-            rm -rf "$tmp"
-            die "$url does not match its pinned checksum (expected $sha, got $got)"
-        fi
+        rm -rf "$tmp"
+        die "$url does not match its pinned checksum (expected $sha, got $got)"
     fi
     unzip -tq "$tmp/archive.zip" \
         || { rm -rf "$tmp"; die "archive is corrupt or invalid zip: $url"; }

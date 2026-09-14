@@ -363,6 +363,7 @@ run rm -f "$HOME/.local/bin/aura-glass" \
           "$HOME/.local/bin/aura-glass-ext" \
           "$HOME/.local/bin/aura-glass-doctor" \
           "$HOME/.local/bin/aura-glass-backup" \
+          "$HOME/.local/lib/aura-glass/safe_archive.py" \
           "$HOME/.local/bin/aura-glass-mode" \
           "$HOME/.local/bin/aura-glass-open-once" \
           "$HOME/.local/bin/tahoe-glass-apply" "$HOME/.local/bin/tahoe-glass-icon-sync" \

@@ -48,11 +48,17 @@ run_test() {
 
 # 1. Syntax and permissions checks
 printf '%s[1/3] Syntax & Integrity Validation%s\n' "$C_CYA" "$C_OFF"
-run_test "bash-syntax-all" bash -n "$REPO_ROOT/install.sh" "$REPO_ROOT/uninstall.sh" \
+syntax_shell() {
+    local script
+    for script in "$@"; do
+        bash -n "$script" || return 1
+    done
+}
+run_test "bash-syntax-all" syntax_shell "$REPO_ROOT/install.sh" "$REPO_ROOT/uninstall.sh" \
     "$REPO_ROOT"/lib/*.sh "$REPO_ROOT"/bin/* "$REPO_ROOT"/completions/*.bash \
     "$TOOLS_DIR"/*.sh "$TOOLS_DIR"/hooks/*
 
-run_test "python-syntax-all" python3 -m py_compile "$REPO_ROOT"/gui/*.py "$TOOLS_DIR"/*.py
+run_test "python-syntax-all" python3 -m py_compile "$REPO_ROOT"/lib/*.py "$REPO_ROOT"/gui/*.py "$TOOLS_DIR"/*.py
 
 check_bin_executable() {
     local f missing=0

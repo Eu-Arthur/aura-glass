@@ -122,8 +122,8 @@ INTER_SHA256="9883fdd4a49d4fb66bd8177ba6625ef9a64aa45899767dde3d36aa425756b11e"
 # desktop would drop back to Noto and read as a different typeface mid-sentence.
 # fonts/misans-arabic.conf is what points fontconfig at it.
 #
-# Both URLs are unversioned: Xiaomi overwrite them in place. The checksums are
-# a notice rather than a pin for that reason — see fetch_zip_pinned.
+# Both URLs are unversioned: Xiaomi overwrite them in place. A changed download
+# is rejected until its contents have been reviewed and the checksum updated.
 MISANS_LATIN_URL="https://hyperos.mi.com/font-download/MiSans_Latin.zip"
 MISANS_LATIN_SHA256="d24091ccd409a4152ffcc12cd659c16df9cdcdb4c702d8ae355b321e711f0004"
 MISANS_ARABIC_URL="https://hyperos.mi.com/font-download/MiSans_Arabic.zip"

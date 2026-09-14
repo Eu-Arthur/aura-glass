@@ -109,17 +109,18 @@ run_benchmark() {
 
     start_ns="$(date +%s%N 2>/dev/null || echo "0")"
 
-    python3 -c "
+    python3 - "$iterations" >/dev/null 2>&1 <<'PYTHON'
+import sys
 import math, time
 t0 = time.perf_counter()
 # Simulate multi-layer gaussian blur downsampling & color transform matrices
 acc = 0.0
-for i in range($iterations):
+for i in range(int(sys.argv[1])):
     w = math.sin(i * 0.01) * 0.5 + 0.5
     acc += math.sqrt(w * 255.0)
 t1 = time.perf_counter()
 print(f'{(t1 - t0) * 1000:.2f}')
-" >/dev/null 2>&1
+PYTHON
 
     end_ns="$(date +%s%N 2>/dev/null || echo "0")"
 
@@ -215,29 +216,31 @@ main() {
     fi
 
     if [ "$as_json" -eq 1 ]; then
-        python3 -c "
+        python3 - "$tier" "$vendor" "$model" "$driver" "$rec_mode" "$recommendation" "$score" "$is_sw" "$refresh_rate" "$bench_time" <<'PYTHON'
+import sys
 import json
 print(json.dumps({
-    'score': $score,
-    'tier': '$tier',
+    'score': int(sys.argv[7]),
+    'tier': sys.argv[1],
     'gpu': {
-        'vendor': '$vendor',
-        'model': '$model',
-        'driver': '$driver',
-        'software_renderer': bool($is_sw)
+        'vendor': sys.argv[2],
+        'model': sys.argv[3],
+        'driver': sys.argv[4],
+        'software_renderer': bool(int(sys.argv[8]))
     },
     'display': {
-        'refresh_rate_hz': $refresh_rate
+        'refresh_rate_hz': int(sys.argv[9])
     },
     'benchmark': {
-        'duration_ms': $bench_time
+        'duration_ms': int(sys.argv[10])
     },
     'tuning': {
-        'recommended_mode': '$rec_mode',
-        'recommendation': '$recommendation'
+        'recommended_mode': sys.argv[5],
+        'recommendation': sys.argv[6]
     }
 }, indent=2))
-"
+PYTHON
+
         return 0
     fi
 

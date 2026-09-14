@@ -21,16 +21,6 @@ TUNED_PPI=109
 
 # Logical PPI of the primary output, or nothing if it cannot be measured.
 measure_logical_ppi() {
-    local cache
-    cache="/tmp/.aura-glass-ppi-$(id -u)"
-    if [ -r "$cache" ]; then
-        local val
-        IFS= read -r val < "$cache" 2>/dev/null || true
-        case "$val" in
-            ''|*[!0-9]*) ;;
-            *) printf '%s\n' "$val"; return 0 ;;
-        esac
-    fi
     local res
     res="$(python3 - <<'PY' 2>/dev/null
 import glob, math, os, re, subprocess
@@ -93,7 +83,6 @@ if best and scale:
 PY
 )"
     if [ -n "$res" ]; then
-        ( umask 077; printf '%s\n' "$res" > "$cache" 2>/dev/null || true )
         printf '%s\n' "$res"
     fi
 }
